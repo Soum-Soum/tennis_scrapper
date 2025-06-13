@@ -1,7 +1,8 @@
 import datetime
 from enum import StrEnum
+from typing import Self
 import uuid
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
 
 
 class Surface(StrEnum):
@@ -13,7 +14,16 @@ class Surface(StrEnum):
 
 class Gender(StrEnum):
     MEN = "MEN"
-    WOMEN = "WOMEN"
+    WOMAN = "WOMAN"
+
+    @classmethod
+    def from_string(cls, value: str) -> Self:
+        value = value.strip().upper()
+        if value in ["MAN", "MEN"]:
+            return cls.MEN
+        elif value in ["WOMAN", "WOMEN"]:
+            return cls.WOMAN
+        raise ValueError(f"Invalid gender value: {value}")
 
 
 class PreferedHand(StrEnum):
@@ -52,6 +62,7 @@ class Match(SQLModel, table=True):
     date: datetime.datetime = Field(nullable=False)
     player1_id: uuid.UUID = Field(foreign_key="player.player_id", nullable=False)
     player2_id: uuid.UUID = Field(foreign_key="player.player_id", nullable=False)
+
     score: str = Field(
         nullable=False, description="Match score in format '6-3 6-4' or '6-3 3-6 6-4'"
     )

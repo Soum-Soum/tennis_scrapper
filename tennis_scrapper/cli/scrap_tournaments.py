@@ -135,7 +135,7 @@ def scrap_tournaments(
         async with aiohttp.ClientSession() as session:
             for extention in ["atp-men", "wta-women"]:
                 players_gender: Gender = (
-                    Gender.MEN if "atp" in extention else Gender.WOMEN
+                    Gender.MEN if "atp" in extention else Gender.WOMAN
                 )
                 for year in range(from_year, to_year + 1):
                     url_year: str = (

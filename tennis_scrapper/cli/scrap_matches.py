@@ -1,9 +1,9 @@
 import datetime
-import uuid
-from typing import List
+from typing import List, Optional
 from bs4 import BeautifulSoup
 from sqlmodel import Session
-from db.models import Match, Tournament
+from tqdm import tqdm
+from db.models import Match, Player, Tournament
 from conf.config import settings
 from loguru import logger
 import typer
@@ -11,6 +11,7 @@ from db.db_utils import get_table, engine
 import asyncio
 import aiohttp
 
+from cli.scrap_players import fetch_player
 from utils.str_utils import remove_digits, remove_punctuation
 
 
@@ -87,7 +88,28 @@ def extract_odds(tr1) -> tuple[float, float]:
     return player_1_odd, player_2_odd
 
 
-def extract_matches(html: str, tournament: Tournament) -> List[Match]:
+async def player_from_url(
+    player_name: str,
+    player_url: str,
+    players: dict[str, Player],
+    session: aiohttp.ClientSession,
+) -> Optional[Player]:
+    player = players.get(player_url)
+    if player is None:
+        player = await fetch_player(
+            session=session,
+            player_name=player_name,
+            player_detail_url_extension=player_url,
+        )
+    return player
+
+
+async def extract_matches_and_players(
+    html: str,
+    session: aiohttp.ClientSession,
+    tournament: Tournament,
+    players: dict[str, Player],
+) -> tuple[tuple[list[Match], Player, Player], dict[str, Player]]:
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", class_="result")
     matches: List[Match] = []
@@ -112,11 +134,32 @@ def extract_matches(html: str, tournament: Tournament) -> List[Match]:
     assert len(row_one_list) == len(row_two_list), "Mismatch in row counts"
     row_pairs = zip(row_one_list, row_two_list)
 
-    matches = []
+    match_and_players = []
     for row1, row2 in row_pairs:
         (player1_name, player1_url), (player2_name, player2_url) = parse_players_names(
             row1, row2
         )
+
+        player_1 = await player_from_url(
+            player_name=player1_name,
+            player_url=player1_url,
+            players=players,
+            session=session,
+        )
+        player_2 = await player_from_url(
+            player_name=player2_name,
+            player_url=player2_url,
+            players=players,
+            session=session,
+        )
+        if player_1 is None or player_2 is None:
+            logger.warning(
+                f"Player not found: {player1_name} ({player1_url}) or {player2_name} ({player2_url})"
+            )
+            continue
+        players[player1_url] = player_1
+        players[player2_url] = player_2
+
         match_date = parse_date(row1, tournament)
         match_round = parse_round(row1)
         match_score = parse_score(row1, row2)
@@ -124,37 +167,16 @@ def extract_matches(html: str, tournament: Tournament) -> List[Match]:
         match = Match(
             tournament_id=tournament.tournament_id,
             date=match_date,
-            player1_id=uuid.uuid4(),  # Placeholder, should be replaced with actual player ID
-            player2_id=uuid.uuid4(),  # Placeholder, should be replaced with actual player ID
+            player1_id=player_1.player_id,
+            player2_id=player_2.player_id,
             score=match_score,
             player_1_odds=player_1_odds,
             player_2_odds=player_2_odds,
             round=match_round,
         )
-        matches.append(match)
+        match_and_players.append((match, player_1, player_2))
 
-    return matches
-
-
-async def fetch_and_store_matches(
-    session: aiohttp.ClientSession, tournament: Tournament
-) -> int:
-    url = f"{settings.base_url}/{tournament.match_list_url_extension}"
-    logger.info(f"Scraping matches from {tournament.name} : {url}")
-    async with session.get(url, headers={"Accept": "text/html"}) as resp:
-        if resp.status != 200:
-            logger.error(f"Error while downloading {url}")
-            return 0
-        html = await resp.text()
-        matches = extract_matches(html, tournament)
-        if not matches:
-            logger.info(f"No matches found for {url}")
-            return 0
-        with Session(engine) as db_session:
-            db_session.add_all(matches)
-            db_session.commit()
-        logger.success(f"{len(matches)} matches inserted for {url}")
-        return len(matches)
+    return match_and_players, players
 
 
 app = typer.Typer()
@@ -166,9 +188,38 @@ def scrap_matches() -> None:
 
     async def run_scraping():
         async with aiohttp.ClientSession() as session:
-            for tournament in tournaments:
-                logger.info(f"Processing tournament: {tournament.name}")
-                await fetch_and_store_matches(session, tournament)
+            players = {}
+            for tournament in tqdm(
+                tournaments,
+                desc="Scraping matches",
+                unit="tournament",
+            ):
+                url = f"{settings.base_url}/{tournament.match_list_url_extension}"
+                logger.info(f"Scraping matches from {tournament.name} : {url}")
+                async with session.get(url, headers={"Accept": "text/html"}) as resp:
+                    if resp.status != 200:
+                        logger.error(f"Error while downloading {url}")
+                        continue
+                    html = await resp.text()
+                    match_and_players, players = await extract_matches_and_players(
+                        html=html,
+                        session=session,
+                        tournament=tournament,
+                        players=players,
+                    )
+                    if not match_and_players:
+                        logger.info(f"No matches found for {url}")
+                        continue
+                    with Session(engine) as db_session:
+                        for match, player1, player2 in match_and_players:
+                            db_session.merge(player1)
+                            db_session.merge(player2)
+                            db_session.add(match)
+
+                        db_session.commit()
+                    logger.success(
+                        f"{len(match_and_players)} matches inserted for {url}"
+                    )
 
     asyncio.run(run_scraping())
 
