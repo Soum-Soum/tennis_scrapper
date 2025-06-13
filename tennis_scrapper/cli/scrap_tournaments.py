@@ -1,11 +1,12 @@
 import datetime
-from typing import List, Dict, Any
+from typing import List, Any
 from bs4 import BeautifulSoup
-from db.models.Tournament import Gender, Tournament, Surface
+from sqlmodel import Session
+from db.models import Gender, Tournament, Surface
 from conf.config import settings
 from loguru import logger
 import typer
-from db.db_utils import create_db_and_tables, get_session
+from db.db_utils import engine
 import asyncio
 import aiohttp
 
@@ -67,11 +68,7 @@ def extract_tournaments(html: str, players_gender: Gender) -> List[Tournament]:
         tds = row.find_all(["td", "th"])
         if len(tds) < 6:
             continue
-        date = parse_date(
-            str(tds[0]).split(">", 1)[1].split("<", 1)[0]
-            + "<br>"
-            + tds[0].get_text(strip=True)[-4:]
-        )
+        date = parse_date(tds[0].get_text(strip=True))
         name = tds[1].get_text(strip=True)
         if name == "Tournament":
             continue  # Skip header row
@@ -103,11 +100,10 @@ async def fetch_and_store_tournaments(
                 return 0
             html = await resp.text()
             tournaments = extract_tournaments(html, players_gender)
-            engine = create_db_and_tables()
             if not tournaments:
                 logger.info(f"No tournaments found for {url_year}")
                 return 0
-            with get_session(engine) as db_session:
+            with Session(engine) as db_session:
                 db_session.add_all(tournaments)
                 db_session.commit()
             logger.success(f"{len(tournaments)} tournaments inserted for {url_year}")
@@ -121,7 +117,7 @@ app = typer.Typer()
 
 
 @app.command()
-def scrap_tournament(
+def scrap_tournaments(
     from_year: int = typer.Option(1990, "--from", help="Start year (default: 1990)"),
     to_year: int = typer.Option(
         datetime.datetime.now().year,
@@ -132,12 +128,7 @@ def scrap_tournament(
     """
     Scrape tournaments from tennisexplorer URL for a range of years.
     """
-    base_url: str = settings.tournament_base_url
-    if not base_url:
-        logger.error(
-            "No URL provided and no tournament_base_url found in configuration."
-        )
-        raise typer.Exit(1)
+    tournament_calendar_base_url: str = f"{settings.base_url}/calendar"
 
     async def run_scraping() -> None:
         tasks: list = []
@@ -147,7 +138,9 @@ def scrap_tournament(
                     Gender.MEN if "atp" in extention else Gender.WOMEN
                 )
                 for year in range(from_year, to_year + 1):
-                    url_year: str = f"{base_url}/{extention}/{year}/"
+                    url_year: str = (
+                        f"{tournament_calendar_base_url}/{extention}/{year}/"
+                    )
                     tasks.append(
                         fetch_and_store_tournaments(
                             session, url_year, year, players_gender

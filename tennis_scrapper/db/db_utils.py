@@ -1,20 +1,18 @@
-from sqlmodel import SQLModel, create_engine, Session
+from typing import Type, TypeVar
+from sqlmodel import SQLModel, Sequence, create_engine, Session, select
 from conf.config import settings
 
 DB_PATH = settings.db_url
 
-
-def get_engine():
-    return create_engine(DB_PATH)
-
-
-def create_db_and_tables():
-    engine = get_engine()
-    SQLModel.metadata.create_all(engine)
-    return engine
+engine = create_engine(DB_PATH)
+SQLModel.metadata.create_all(engine)
 
 
-def get_session(engine=None):
-    if engine is None:
-        engine = get_engine()
-    return Session(engine)
+T = TypeVar("T", bound=SQLModel)
+
+
+def get_table(table: Type[T]) -> Sequence[T]:
+    with Session(engine) as session:
+        statement = select(table)
+        result = session.exec(statement)
+        return result.all()
