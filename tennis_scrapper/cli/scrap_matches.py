@@ -7,7 +7,7 @@ from db.models import Match, Player, Tournament
 from conf.config import settings
 from loguru import logger
 import typer
-from db.db_utils import get_table, engine, insert_if_not_exists
+from db.db_utils import get_table, engine, insert_if_not_exists, clear_table
 import asyncio
 import aiohttp
 
@@ -264,6 +264,9 @@ def scrap_matches(
         "--to",
         help="End year (default: current year)",
     ),
+    clear: bool = typer.Option(
+        False, "--clear", help="Clear Match and Player tables before scraping"
+    ),
 ) -> None:
     tournaments = get_table(Tournament)
     tournaments = list(
@@ -272,6 +275,10 @@ def scrap_matches(
             tournaments,
         )
     )
+    if clear:
+        logger.info("Clearing Match and Player tables before scraping")
+        clear_table(Match)
+        clear_table(Player)
     asyncio.run(run_scraping(tournaments))
 
 

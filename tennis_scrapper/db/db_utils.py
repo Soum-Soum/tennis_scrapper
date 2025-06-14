@@ -1,7 +1,7 @@
 from typing import Type, TypeVar
 
 from sqlalchemy.dialects.sqlite import insert
-from sqlmodel import SQLModel, Sequence, create_engine, Session, select
+from sqlmodel import SQLModel, Sequence, create_engine, Session, select, delete
 from conf.config import settings
 
 DB_PATH = settings.db_url
@@ -18,6 +18,12 @@ def get_table(table: Type[T]) -> Sequence[T]:
         statement = select(table)
         result = session.exec(statement)
         return result.all()
+
+
+def clear_table(table: Type[T]) -> None:
+    with Session(engine) as db_session:
+        db_session.exec(delete(table))
+        db_session.commit()
 
 
 def insert_if_not_exists(table: Type[T], instances: list[T]) -> None:
