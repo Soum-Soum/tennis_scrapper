@@ -3,6 +3,7 @@ import hashlib
 from enum import StrEnum
 from typing import Self
 
+from loguru import logger
 from sqlmodel import Field, SQLModel
 
 
@@ -113,6 +114,7 @@ class Match(HashedIDModel, table=True):
         nullable=True,
         description="Round of the match (e.g. 'Final', 'Semi-Final', 'Quarter-Final')",
     )
+    surface: Surface = Field(nullable=False, description="Match surface type")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

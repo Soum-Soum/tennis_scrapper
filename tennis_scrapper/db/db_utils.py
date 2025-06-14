@@ -1,10 +1,10 @@
-from typing import Type, TypeVar
+from typing import Type, TypeVar, Optional
 
 from sqlalchemy.dialects.sqlite import insert
 from sqlmodel import SQLModel, Sequence, create_engine, Session, select, delete
 
 from conf.config import settings
-from db.models import Tournament
+from db.models import Tournament, Player
 
 DB_PATH = settings.db_url
 
@@ -57,3 +57,10 @@ def unset_all_tournament_as_scraped() -> None:
             tournament.has_been_scraped = False
             session.add(tournament)
         session.commit()
+
+
+def get_player_by_name(player_name: str) -> Optional[Player]:
+    with Session(engine) as session:
+        statement = select(Player).where(Player.name.like(f"%{player_name}%"))
+        result = session.exec(statement)
+        return result.first()

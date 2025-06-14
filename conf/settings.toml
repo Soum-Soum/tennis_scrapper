@@ -1,4 +1,4 @@
 [default]
-db_url = "sqlite:///../tennis_data.db"
+db_url = "sqlite:////home/pierre/dev/tennis_scrapper/tennis_data.db"
 base_url = "https://www.tennisexplorer.com"
 tournament_scraping_concurrency_limit = 10

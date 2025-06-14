@@ -213,6 +213,7 @@ async def extract_matches_and_players(
 
         match = Match(
             tournament_id=tournament.tournament_id,
+            surface=tournament.surface,
             player1_id=player1.player_id,
             player2_id=player2.player_id,
             **match_data,
