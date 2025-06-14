@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Optional
+from typing import List, Optional, Any, Coroutine
 from bs4 import BeautifulSoup
 from sqlmodel import Session
 from tqdm import tqdm
@@ -7,11 +7,12 @@ from db.models import Match, Player, Tournament
 from conf.config import settings
 from loguru import logger
 import typer
-from db.db_utils import get_table, engine
+from db.db_utils import get_table, engine, insert_if_not_exists
 import asyncio
 import aiohttp
 
 from cli.scrap_players import fetch_player
+from utils.http_utils import get_with_retry
 from utils.str_utils import remove_digits, remove_punctuation
 
 
@@ -23,24 +24,24 @@ def parse_players_names(tr1, tr2) -> tuple[tuple[str, str], tuple[str, str]]:
         a = td.find("a")
         if not hasattr(a, "href"):
             return clean_name, None
-        player_url_extention = td.find("a")["href"].strip()
-        return clean_name, player_url_extention
+        player_url_extension = td.find("a")["href"].strip()
+        return clean_name, player_url_extension
 
     return extrac_name(tr1), extrac_name(tr2)
 
 
 def parse_date(tr1, tournament: Tournament) -> datetime.datetime:
     td = tr1.find("td", ["first", "time"])
-    day, month, houre = td.get_text(strip=True).split(".")
-    houre, minute = houre.split(":")
-    houre = houre if houre.isdigit() else "00"
+    day, month, hour = td.get_text(strip=True).split(".")
+    hour, minute = hour.split(":")
+    hour = hour if hour.isdigit() else "00"
     minute = minute if minute.isdigit() else "00"
     year = tournament.date.year
     return datetime.datetime(
         year=int(year),
         month=int(month),
         day=int(day),
-        hour=int(houre),
+        hour=int(hour),
         minute=int(minute),
     )
 
@@ -91,16 +92,19 @@ def extract_odds(tr1) -> tuple[float, float]:
 async def player_from_url(
     player_name: str,
     player_url: str,
-    players: dict[str, Player],
+    players: dict[str, Optional[Player]],
     session: aiohttp.ClientSession,
 ) -> Optional[Player]:
-    player = players.get(player_url)
-    if player is None:
-        player = await fetch_player(
-            session=session,
-            player_name=player_name,
-            player_detail_url_extension=player_url,
-        )
+    if player_url in players:
+        return players[player_url]
+
+    player = await fetch_player(
+        session=session,
+        player_name=player_name,
+        player_detail_url_extension=player_url,
+    )
+
+    players[player_url] = player
     return player
 
 
@@ -109,33 +113,20 @@ async def extract_matches_and_players(
     session: aiohttp.ClientSession,
     tournament: Tournament,
     players: dict[str, Player],
-) -> tuple[tuple[list[Match], Player, Player], dict[str, Player]]:
-    soup = BeautifulSoup(html, "html.parser")
+) -> tuple[list[tuple[Match, Player, Player]], dict[str, Player]]:
+    soup = BeautifulSoup(html, "lxml")
     table = soup.find("table", class_="result")
-    matches: List[Match] = []
-    if not table:
-        return matches
     rows = table.find_all("tr")
 
-    row_one_list = list(
-        filter(
-            lambda r: r.has_attr("id") and not r["id"].endswith("b"),
-            rows,
-        )
-    )
-
-    row_two_list = list(
-        filter(
-            lambda r: r.has_attr("id") and r["id"].endswith("b"),
-            rows,
-        )
-    )
+    row_one_list = [r for r in rows if r.has_attr("id") and not r["id"].endswith("b")]
+    row_two_list = [r for r in rows if r.has_attr("id") and r["id"].endswith("b")]
 
     assert len(row_one_list) == len(row_two_list), "Mismatch in row counts"
-    row_pairs = zip(row_one_list, row_two_list)
+    row_pairs = list(zip(row_one_list, row_two_list))
 
-    match_and_players = []
-    for row1, row2 in row_pairs:
+    match_and_players: list[tuple[Match, Player, Player]] = []
+
+    async def process_row_pair(row1, row2):
         (player1_name, player1_url), (player2_name, player2_url) = parse_players_names(
             row1, row2
         )
@@ -152,11 +143,13 @@ async def extract_matches_and_players(
             players=players,
             session=session,
         )
+
         if player_1 is None or player_2 is None:
             logger.warning(
                 f"Player not found: {player1_name} ({player1_url}) or {player2_name} ({player2_url})"
             )
-            continue
+            return None
+
         players[player1_url] = player_1
         players[player2_url] = player_2
 
@@ -164,6 +157,7 @@ async def extract_matches_and_players(
         match_round = parse_round(row1)
         match_score = parse_score(row1, row2)
         player_1_odds, player_2_odds = extract_odds(row1)
+
         match = Match(
             tournament_id=tournament.tournament_id,
             date=match_date,
@@ -174,7 +168,12 @@ async def extract_matches_and_players(
             player_2_odds=player_2_odds,
             round=match_round,
         )
-        match_and_players.append((match, player_1, player_2))
+        return match, player_1, player_2
+
+    tasks = [process_row_pair(r1, r2) for r1, r2 in row_pairs]
+    results = await asyncio.gather(*tasks)
+
+    match_and_players = [res for res in results if res is not None]
 
     return match_and_players, players
 
@@ -182,46 +181,71 @@ async def extract_matches_and_players(
 app = typer.Typer()
 
 
-@app.command()
-def scrap_matches() -> None:
-    tournaments = get_table(Tournament)
+async def run_scraping(tournaments: list[Tournament]) -> None:
+    async with aiohttp.ClientSession() as session:
+        players: dict[Any, Any] = {}
+        for tournament in tqdm(
+            tournaments,
+            desc="Scraping tournament matches",
+            unit="tournament",
+        ):
+            base_url = f"{settings.base_url}/{tournament.match_list_url_extension}"
+            extensions = ["/?phase=main", "/?phase=qualification"]
 
-    async def run_scraping():
-        async with aiohttp.ClientSession() as session:
-            players = {}
-            for tournament in tqdm(
-                tournaments,
-                desc="Scraping matches",
-                unit="tournament",
-            ):
-                url = f"{settings.base_url}/{tournament.match_list_url_extension}"
+            all_match_and_players = []
+            for extension in extensions:
+                url = f"{base_url}{extension}"  # <-- corrige la concaténation ici
                 logger.info(f"Scraping matches from {tournament.name} : {url}")
-                async with session.get(url, headers={"Accept": "text/html"}) as resp:
-                    if resp.status != 200:
-                        logger.error(f"Error while downloading {url}")
-                        continue
-                    html = await resp.text()
-                    match_and_players, players = await extract_matches_and_players(
-                        html=html,
-                        session=session,
-                        tournament=tournament,
-                        players=players,
-                    )
-                    if not match_and_players:
-                        logger.info(f"No matches found for {url}")
-                        continue
-                    with Session(engine) as db_session:
-                        for match, player1, player2 in match_and_players:
-                            db_session.merge(player1)
-                            db_session.merge(player2)
-                            db_session.add(match)
 
-                        db_session.commit()
-                    logger.success(
-                        f"{len(match_and_players)} matches inserted for {url}"
-                    )
+                html: Optional[str] = await get_with_retry(
+                    session, url, headers={"Accept": "text/html"}
+                )
 
-    asyncio.run(run_scraping())
+                if html is None:
+                    logger.error(f"Failed to download {url} after retries")
+                    continue
+
+                match_and_players, players = await extract_matches_and_players(
+                    html=html,
+                    session=session,
+                    tournament=tournament,
+                    players=players,
+                )
+
+                if not match_and_players:
+                    logger.info(f"No matches found for {url}")
+                    continue
+                all_match_and_players.extend(match_and_players)
+
+            all_matches = set()
+            all_players = set()
+            for match, player1, player2 in all_match_and_players:
+                all_matches.add(match)
+                all_players.add(player1)
+                all_players.add(player2)
+
+            insert_if_not_exists(table=Match, instances=list(all_matches))
+            insert_if_not_exists(table=Player, instances=list(all_players))
+            logger.success(f"Tournament {tournament.name} matches scraped and stored")
+
+
+@app.command()
+def scrap_matches(
+    from_year: int = typer.Option(1990, "--from", help="Start year (default: 1990)"),
+    to_year: int = typer.Option(
+        datetime.datetime.now().year,
+        "--to",
+        help="End year (default: current year)",
+    ),
+) -> None:
+    tournaments = get_table(Tournament)
+    tournaments = list(
+        filter(
+            lambda t: from_year <= t.date.year <= to_year,
+            tournaments,
+        )
+    )
+    asyncio.run(run_scraping(tournaments))
 
 
 if __name__ == "__main__":

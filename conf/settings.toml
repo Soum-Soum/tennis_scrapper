@@ -1,3 +1,3 @@
 [default]
-db_url = "sqlite:///tennis_data.db"
+db_url = "sqlite:///../tennis_data.db"
 base_url = "https://www.tennisexplorer.com"

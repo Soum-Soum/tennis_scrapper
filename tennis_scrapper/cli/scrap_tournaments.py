@@ -2,6 +2,7 @@ import datetime
 from typing import List, Any
 from bs4 import BeautifulSoup
 from sqlmodel import Session
+from sqlalchemy.dialects.sqlite import insert
 from db.models import Gender, Tournament, Surface
 from conf.config import settings
 from loguru import logger
@@ -28,14 +29,16 @@ def parse_date(date_str: str) -> datetime.date | None:
         month = int(month.strip())
         day = int(day.strip())
         return datetime.date(year, month, day)
-    except Exception:
+    except ValueError:
+        logger.error(f"Unable to parse date from string: {date_str}")
         return None
 
 
 def parse_surface(td: Any) -> Surface:
-    span = td.find("span")
-    if not span or not span.has_attr("title"):
-        return Surface.HARD  # fallback
+    span = td.find("span", title=True)
+    if span is None:
+        return Surface.UNKNOWN
+
     title = span["title"].strip().lower()
     if "indoor" in title:
         return Surface.INDOOR
@@ -45,7 +48,7 @@ def parse_surface(td: Any) -> Surface:
         return Surface.CLAY
     if "grass" in title:
         return Surface.GRASS
-    return Surface.HARD
+    raise ValueError(f"Unexpected surface value : {title}")
 
 
 def extract_tournaments(html: str, players_gender: Gender) -> List[Tournament]:
@@ -54,29 +57,20 @@ def extract_tournaments(html: str, players_gender: Gender) -> List[Tournament]:
     tournaments: List[Tournament] = []
     if not table:
         return tournaments
-    rows = table.find_all("tr")
+    rows_one = table.find_all("tr", class_="one")
+    rows_two = table.find_all("tr", class_="two")
+    rows_pairs = list(zip(rows_one[::2], rows_one[1::2])) + list(
+        zip(rows_two[::2], rows_two[1::2])
+    )
     i = 0
-    while i < len(rows):
-        row = rows[i]
-        if row.find("td", class_="shortdate"):
-            # This is a tournament row
-            i += 2  # skip doubles row
-        else:
-            i += 1
-            continue
 
-        tds = row.find_all(["td", "th"])
-        if len(tds) < 6:
-            continue
-        date = parse_date(tds[0].get_text(strip=True))
-        name = tds[1].get_text(strip=True)
-        if name == "Tournament":
-            continue  # Skip header row
-        match_list_url_extension = tds[1].find("a")["href"]
-        surface = parse_surface(tds[2])
-        prize = parse_prize(tds[3].get_text(strip=True))
-        if date is None:
-            continue
+    for row1, row2 in rows_pairs:
+        date = parse_date(row1.find("td", class_="shortdate").get_text(strip=True))
+        name = row1.find(class_="t-name").get_text(strip=True)
+        match_list_url_extension = row1.find(class_="t-name").find("a")["href"]
+
+        surface = parse_surface(row1.find("td", class_="s-color"))
+        prize = parse_prize(row1.find("td", class_="tr").get_text(strip=True))
         tournament = Tournament(
             name=name,
             date=date,
@@ -86,6 +80,7 @@ def extract_tournaments(html: str, players_gender: Gender) -> List[Tournament]:
             match_list_url_extension=match_list_url_extension,
         )
         tournaments.append(tournament)
+
     return tournaments
 
 
@@ -93,24 +88,23 @@ async def fetch_and_store_tournaments(
     session: aiohttp.ClientSession, url_year: str, year: int, players_gender: Gender
 ) -> int:
     logger.info(f"Scraping {url_year}")
-    try:
-        async with session.get(url_year) as resp:
-            if resp.status != 200:
-                logger.error(f"Error while downloading {url_year}")
-                return 0
-            html = await resp.text()
-            tournaments = extract_tournaments(html, players_gender)
-            if not tournaments:
-                logger.info(f"No tournaments found for {url_year}")
-                return 0
-            with Session(engine) as db_session:
-                db_session.add_all(tournaments)
-                db_session.commit()
-            logger.success(f"{len(tournaments)} tournaments inserted for {url_year}")
-            return len(tournaments)
-    except Exception as e:
-        logger.error(f"Error for {url_year}: {e}")
-        return 0
+    async with session.get(url_year) as resp:
+        if resp.status != 200:
+            logger.error(f"Error while downloading {url_year}")
+            return 0
+        html = await resp.text()
+        tournaments = extract_tournaments(html, players_gender)
+        if not tournaments:
+            logger.info(f"No tournaments found for {url_year}")
+            return 0
+        # Utilise SQLAlchemy Core pour l'upsert
+        with Session(engine) as db_session:
+            values = [tournament.model_dump() for tournament in tournaments]
+            stmt = insert(Tournament).values(values).on_conflict_do_nothing()
+            db_session.exec(stmt)
+            db_session.commit()
+        logger.success(f"{len(tournaments)} tournaments inserted for {url_year}")
+        return len(tournaments)
 
 
 app = typer.Typer()
@@ -125,21 +119,18 @@ def scrap_tournaments(
         help="End year (default: current year)",
     ),
 ) -> None:
-    """
-    Scrape tournaments from tennisexplorer URL for a range of years.
-    """
     tournament_calendar_base_url: str = f"{settings.base_url}/calendar"
 
     async def run_scraping() -> None:
         tasks: list = []
         async with aiohttp.ClientSession() as session:
-            for extention in ["atp-men", "wta-women"]:
+            for extension in ["atp-men", "wta-women"]:
                 players_gender: Gender = (
-                    Gender.MEN if "atp" in extention else Gender.WOMAN
+                    Gender.MEN if "atp" in extension else Gender.WOMAN
                 )
                 for year in range(from_year, to_year + 1):
                     url_year: str = (
-                        f"{tournament_calendar_base_url}/{extention}/{year}/"
+                        f"{tournament_calendar_base_url}/{extension}/{year}/"
                     )
                     tasks.append(
                         fetch_and_store_tournaments(
