@@ -112,7 +112,12 @@ async def fetch_and_store_tournaments(
 app = typer.Typer()
 
 
-@app.command()
+@app.command(
+    help=(
+        "Scrape tennis tournaments from the ATP and WTA websites for a given year range."
+        " The scraped data is stored in the database. "
+    )
+)
 def scrap_tournaments(
     from_year: int = typer.Option(1990, "--from", help="Start year (default: 1990)"),
     to_year: int = typer.Option(

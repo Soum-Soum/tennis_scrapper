@@ -222,9 +222,6 @@ async def extract_matches_and_players(
     return tournament_matches, players_in_tournament
 
 
-app = typer.Typer()
-
-
 async def scrap_on_tournament(
     tournament: Tournament, session: aiohttp.ClientSession
 ) -> None:
@@ -266,24 +263,8 @@ async def scrap_on_tournament(
     logger.success(f"Tournament {tournament.name} matches scraped and stored")
 
 
-# async def run_scraping(tournaments: list[Tournament]) -> None:
-#     async with aiohttp.ClientSession() as session:
-#         players: dict[Any, Any] = {}
-#         for tournament in tqdm(
-#             tournaments,
-#             desc="Scraping tournament matches",
-#             unit="tournament",
-#         ):
-#             await scrap_on_tournament(
-#                 tournament=tournament,
-#                 session=session,
-#             )
-
-CONCURRENCY_LIMIT = 10
-
-
 async def run_scraping(tournaments: list[Tournament]) -> None:
-    semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
+    semaphore = asyncio.Semaphore(settings.tournament_scraping_concurrency_limit)
     async with aiohttp.ClientSession() as session:
 
         async def sem_scrap(tournament):
@@ -298,7 +279,16 @@ async def run_scraping(tournaments: list[Tournament]) -> None:
             await future
 
 
-@app.command()
+app = typer.Typer()
+
+
+@app.command(
+    help=(
+        "Scrape matches from tournaments between specified years, optionally clearing Match and Player tables."
+        " This command fetches match data, player details, and stores them in the database."
+        "The database should contain Tournament data before running this command."
+    )
+)
 def scrap_matches(
     from_year: int = typer.Option(1990, "--from", help="Start year (default: 1990)"),
     to_year: int = typer.Option(
