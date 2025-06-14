@@ -1,17 +1,16 @@
 import datetime
 from typing import Optional
+
 import aiohttp
 from bs4 import BeautifulSoup
 from loguru import logger
-from sqlmodel import Session
-from db.db_utils import engine
+
 from conf.config import settings
 from db.models import Gender, Player
 from utils.http_utils import get_with_retry
-from utils.str_utils import remove_digits
 
 
-def extract_player(html) -> Player:
+def extract_player(html, player_detail_url_extension: str) -> Player:
 
     def find_div_by_text(divs, start_with: str):
         return next(
@@ -35,7 +34,7 @@ def extract_player(html) -> Player:
         else "Unknown"
     )
 
-    birth_date_div = find_div_by_text(divs, "Born: ")
+    birth_date_div = find_div_by_text(divs, "Age: ")
     birth_date = (
         birth_date_div.get_text(strip=True).split("(")[1].replace(")", "").strip()
         if birth_date_div
@@ -55,7 +54,7 @@ def extract_player(html) -> Player:
     main_hand = (
         main_hand_div.get_text(strip=True).replace("Plays: ", "").strip().upper()
         if main_hand_div
-        else "Unknown"
+        else "UNKNOWN"
     )
     return Player(
         name=player_name,
@@ -63,6 +62,7 @@ def extract_player(html) -> Player:
         birth_date=birth_date,
         gender=gender,
         preferred_hand=main_hand,
+        player_detail_url_extension=player_detail_url_extension,
     )
 
 
@@ -71,9 +71,12 @@ async def fetch_player(
 ) -> Optional[Player]:
     url = f"{settings.base_url}/{player_detail_url_extension}"
     logger.info(f"Scraping player data from {player_name} : {url}")
-    html: Optional[str] = await get_with_retry(
-        session, url, headers={"Accept": "text/html"}
-    )
-    player = extract_player(html)
-    logger.success(f"Player data extracted for {player.name}")
+    try:
+        html: Optional[str] = await get_with_retry(
+            session, url, headers={"Accept": "text/html"}
+        )
+    except RuntimeError as e:
+        logger.error(f"Failed to fetch player data for {player_name}: {e}")
+        return None
+    player = extract_player(html, player_detail_url_extension)
     return player

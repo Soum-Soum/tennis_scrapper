@@ -1,15 +1,17 @@
+import asyncio
 import datetime
 from typing import List, Any
-from bs4 import BeautifulSoup
-from sqlmodel import Session
-from sqlalchemy.dialects.sqlite import insert
-from db.models import Gender, Tournament, Surface
-from conf.config import settings
-from loguru import logger
-import typer
-from db.db_utils import engine
-import asyncio
+
 import aiohttp
+import typer
+from bs4 import BeautifulSoup
+from loguru import logger
+from sqlalchemy.dialects.sqlite import insert
+from sqlmodel import Session
+
+from conf.config import settings
+from db.db_utils import engine
+from db.models import Gender, Tournament, Surface
 
 
 def parse_prize(prize_str: str) -> float:

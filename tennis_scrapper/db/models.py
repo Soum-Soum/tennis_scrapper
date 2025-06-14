@@ -2,8 +2,8 @@ import datetime
 import hashlib
 from enum import StrEnum
 from typing import Self
-import uuid
-from sqlmodel import Field, Relationship, SQLModel
+
+from sqlmodel import Field, SQLModel
 
 
 class Surface(StrEnum):
@@ -28,11 +28,6 @@ class Gender(StrEnum):
         raise ValueError(f"Invalid gender value: {value}")
 
 
-class PreferedHand(StrEnum):
-    RIGHT = "RIGHT"
-    LEFT = "LEFT"
-
-
 class HashedIDModel(SQLModel):
     @staticmethod
     def generate_hashed_id(*args) -> str:
@@ -52,6 +47,7 @@ class Tournament(HashedIDModel, table=True):
     match_list_url_extension: str = Field(
         nullable=False, description="URL extension for match list"
     )
+    has_been_scraped: bool = Field(default=False)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -76,8 +72,9 @@ class Player(HashedIDModel, table=True):
     country: str = Field(nullable=False)
     birth_date: datetime.date = Field(nullable=False)
     gender: Gender = Field(nullable=False)
-    preferred_hand: PreferedHand = Field(
-        nullable=False, description="Player's preferred hand"
+    preferred_hand: str = Field(nullable=False, description="Player's preferred hand")
+    player_detail_url_extension: str = Field(
+        description="URL extension for player details"
     )
 
     def __init__(self, **kwargs):

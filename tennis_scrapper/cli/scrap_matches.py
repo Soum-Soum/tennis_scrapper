@@ -1,21 +1,30 @@
-import datetime
-from typing import List, Optional, Any, Coroutine
-from bs4 import BeautifulSoup
-from sqlmodel import Session
-from tqdm import tqdm
-from db.models import Match, Player, Tournament
-from conf.config import settings
-from loguru import logger
-import typer
-from db.db_utils import get_table, engine, insert_if_not_exists, clear_table
 import asyncio
+import contextvars
+import datetime
+from typing import List, Optional, Any
+
 import aiohttp
+import typer
+from bs4 import BeautifulSoup
+from loguru import logger
+from tqdm import tqdm
 
 from cli.scrap_players import fetch_player
+from conf.config import settings
+from db.db_utils import (
+    get_table,
+    insert_if_not_exists,
+    clear_table,
+    set_tournament_as_scraped,
+    unset_all_tournament_as_scraped,
+)
+from db.models import Match, Player, Tournament
 from utils.http_utils import get_with_retry
 from utils.str_utils import remove_digits, remove_punctuation
 
-url_to_players: dict[str, Optional[Player]] = {}
+url_to_players_var: contextvars.ContextVar[dict[str, Optional[Player]]] = (
+    contextvars.ContextVar("url_to_players_var", default={})
+)
 
 
 def parse_players_names(tr1, tr2) -> tuple[tuple[str, str], tuple[str, str]]:
@@ -67,27 +76,32 @@ def parse_score(tr1, tr2) -> str:
         scores = list(
             filter(
                 lambda s: len(s.strip()) > 0,
-                map(lambda s: s.get_text(strip=True), tds),
+                map(lambda s: remove_sup(s.decode_contents()), tds),
             )
         )
-        scores = list(map(remove_sup, scores))
         return scores
 
     scores1 = extract_score(tr1)
     scores2 = extract_score(tr2)
-    assert len(scores1) == len(
-        scores2
-    ), f"Mismatch in score lengths: {scores1} vs {scores2}, {tr1}, {tr2}"
+
+    if len(scores1) != len(scores2):
+        logger.warning(
+            f"Mismatch in score lengths: {scores1} vs {scores2}, {tr1}, {tr2}"
+        )
+        min_len = min(len(scores1), len(scores2))
+        scores1 = scores1[:min_len]
+        scores2 = scores2[:min_len]
+
     scores_str = " ".join(f"{s1}-{s2}" for s1, s2 in zip(scores1, scores2))
     return scores_str.strip()
 
 
 def parse_odds(tr1) -> tuple[float, float]:
     tds = tr1.find_all("td", class_="course")
-    player_1_odd = tds[0].get_text(strip=True).replace(",", ".")
-    player_2_odd = tds[1].get_text(strip=True).replace(",", ".")
-    player_1_odd = float(player_1_odd) if player_1_odd.isdigit() else 0.0
-    player_2_odd = float(player_2_odd) if player_2_odd.isdigit() else 0.0
+    player_1_odd = tds[0].get_text(strip=True).replace(",", ".").strip()
+    player_2_odd = tds[1].get_text(strip=True).replace(",", ".").strip()
+    player_1_odd = float(player_1_odd) if len(player_1_odd) > 0 else 0
+    player_2_odd = float(player_2_odd) if len(player_2_odd) > 0 else 0
     return player_1_odd, player_2_odd
 
 
@@ -96,6 +110,7 @@ async def player_from_url(
     player_url: str,
     session: aiohttp.ClientSession,
 ) -> Optional[Player]:
+    url_to_players = url_to_players_var.get()
     if player_url in url_to_players:
         logger.info(f"Using cached player data for {player_name} from {player_url}")
         return url_to_players[player_url]
@@ -107,6 +122,7 @@ async def player_from_url(
     )
 
     url_to_players[player_url] = player
+    url_to_players_var.set(url_to_players)
     return player
 
 
@@ -153,6 +169,9 @@ async def extract_matches_and_players(
 
     for row1, row2 in row_pairs:
         match_data = extract_one_match_data(row1, row2, tournament)
+        if match_data["player1_url"] is None or match_data["player2_url"] is None:
+            continue
+
         match_data_list.append(match_data)
         players_to_fetch.add(
             (
@@ -178,6 +197,7 @@ async def extract_matches_and_players(
         ]
     )
 
+    url_to_players = url_to_players_var.get()
     tournament_matches = []
     for match_data in match_data_list:
         player_1_url = match_data.pop("player1_url")
@@ -216,10 +236,13 @@ async def scrap_on_tournament(
     all_tournament_players = set()
     for extension in extensions:
         url = f"{base_url}{extension}"  # <-- corrige la concaténation ici
-
-        html: Optional[str] = await get_with_retry(
-            session, url, headers={"Accept": "text/html"}
-        )
+        try:
+            html: Optional[str] = await get_with_retry(
+                session, url, headers={"Accept": "text/html"}
+            )
+        except RuntimeError:
+            logger.error(f"Server error for {url}, skipping")
+            continue
 
         if html is None:
             logger.error(f"Failed to download {url} after retries")
@@ -239,21 +262,40 @@ async def scrap_on_tournament(
 
     insert_if_not_exists(table=Match, instances=list(all_tournament_matches))
     insert_if_not_exists(table=Player, instances=list(all_tournament_players))
+    set_tournament_as_scraped(tournament=tournament)
     logger.success(f"Tournament {tournament.name} matches scraped and stored")
 
 
+# async def run_scraping(tournaments: list[Tournament]) -> None:
+#     async with aiohttp.ClientSession() as session:
+#         players: dict[Any, Any] = {}
+#         for tournament in tqdm(
+#             tournaments,
+#             desc="Scraping tournament matches",
+#             unit="tournament",
+#         ):
+#             await scrap_on_tournament(
+#                 tournament=tournament,
+#                 session=session,
+#             )
+
+CONCURRENCY_LIMIT = 10
+
+
 async def run_scraping(tournaments: list[Tournament]) -> None:
+    semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
     async with aiohttp.ClientSession() as session:
-        players: dict[Any, Any] = {}
-        for tournament in tqdm(
-            tournaments,
-            desc="Scraping tournament matches",
-            unit="tournament",
+
+        async def sem_scrap(tournament):
+            async with semaphore:
+                await scrap_on_tournament(tournament, session=session)
+
+        tasks = [asyncio.create_task(sem_scrap(t)) for t in tournaments]
+        # Affiche la progression live
+        for future in tqdm(
+            asyncio.as_completed(tasks), total=len(tasks), desc="Scraping tournaments"
         ):
-            await scrap_on_tournament(
-                tournament=tournament,
-                session=session,
-            )
+            await future
 
 
 @app.command()
@@ -275,10 +317,20 @@ def scrap_matches(
             tournaments,
         )
     )
+
+    tournaments = list(filter(lambda t: not t.has_been_scraped, tournaments))
+
     if clear:
         logger.info("Clearing Match and Player tables before scraping")
         clear_table(Match)
         clear_table(Player)
+        unset_all_tournament_as_scraped()
+
+    players = get_table(Player)
+    url_to_players_var.set(
+        {player.player_detail_url_extension: player for player in players}
+    )
+
     asyncio.run(run_scraping(tournaments))
 
 

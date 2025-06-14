@@ -1,4 +1,3 @@
-from pprint import pprint
 from dynaconf import Dynaconf
 
 settings = Dynaconf(
