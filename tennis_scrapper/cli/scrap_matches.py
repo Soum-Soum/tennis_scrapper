@@ -19,6 +19,7 @@ from db.db_utils import (
     unset_all_tournament_as_scraped,
 )
 from db.models import Match, Player, Tournament
+from data.elo import add_elo_rating
 from utils.http_utils import get_with_retry
 from utils.str_utils import remove_digits, remove_punctuation
 
@@ -112,7 +113,7 @@ async def player_from_url(
 ) -> Optional[Player]:
     url_to_players = url_to_players_var.get()
     if player_url in url_to_players:
-        logger.info(f"Using cached player data for {player_name} from {player_url}")
+        # logger.info(f"Using cached player data for {player_name} from {player_url}")
         return url_to_players[player_url]
 
     player = await fetch_player(
@@ -301,28 +302,29 @@ def scrap_matches(
         False, "--clear", help="Clear Match and Player tables before scraping"
     ),
 ) -> None:
-    tournaments = get_table(Tournament)
-    tournaments = list(
-        filter(
-            lambda t: t.date is not None and from_year <= t.date.year <= to_year,
-            tournaments,
-        )
-    )
+    # tournaments = get_table(Tournament)
+    # tournaments = list(
+    #     filter(
+    #         lambda t: t.date is not None and from_year <= t.date.year <= to_year,
+    #         tournaments,
+    #     )
+    # )
 
-    tournaments = list(filter(lambda t: not t.has_been_scraped, tournaments))
+    # tournaments = list(filter(lambda t: not t.has_been_scraped, tournaments))
 
-    if clear:
-        logger.info("Clearing Match and Player tables before scraping")
-        clear_table(Match)
-        clear_table(Player)
-        unset_all_tournament_as_scraped()
+    # if clear:
+    #     logger.info("Clearing Match and Player tables before scraping")
+    #     clear_table(Match)
+    #     clear_table(Player)
+    #     unset_all_tournament_as_scraped()
 
-    players = get_table(Player)
-    url_to_players_var.set(
-        {player.player_detail_url_extension: player for player in players}
-    )
+    # players = get_table(Player)
+    # url_to_players_var.set(
+    #     {player.player_detail_url_extension: player for player in players}
+    # )
 
-    asyncio.run(run_scraping(tournaments))
+    # asyncio.run(run_scraping(tournaments))
+    add_elo_rating()
 
 
 if __name__ == "__main__":

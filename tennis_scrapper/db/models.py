@@ -133,3 +133,26 @@ class Match(HashedIDModel, table=True):
 
     def __hash__(self):
         return int(self.match_id, 16)
+
+
+class EloSurface(StrEnum):
+    CLAY = "CLAY"
+    GRASS = "GRASS"
+    HARD_OR_INDOOR = "HARD_OR_INDOOR"
+    ALL = "ALL"
+
+
+class EloRanking(HashedIDModel, table=True):
+    elo_ranking_id: str = Field(default=None, primary_key=True)
+    player_id: str
+    elo_point: float
+    date: datetime.date
+    surface: EloSurface
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.elo_ranking_id:
+            raise ValueError(f"Elo ranking ID is already set: {self.elo_ranking_id}")
+        self.elo_ranking_id = self.generate_hashed_id(
+            self.player_id, self.elo_point, self.date, self.surface
+        )

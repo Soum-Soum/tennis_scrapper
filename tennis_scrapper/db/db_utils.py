@@ -2,6 +2,7 @@ from typing import Type, TypeVar, Optional
 
 from sqlalchemy.dialects.sqlite import insert
 from sqlmodel import SQLModel, Sequence, create_engine, Session, select, delete
+from tqdm import tqdm
 
 from conf.config import settings
 from db.models import Tournament, Player
@@ -31,11 +32,24 @@ def clear_table(table: Type[T]) -> None:
 def insert_if_not_exists(table: Type[T], instances: list[T]) -> None:
     if len(instances) == 0:
         return
-    with Session(engine) as db_session:
-        values = [instance.model_dump() for instance in instances]
-        stmt = insert(table).values(values).on_conflict_do_nothing()
-        db_session.exec(stmt)
-        db_session.commit()
+
+    def insert_one_batch(batch: list[T]) -> None:
+        with Session(engine) as db_session:
+            values = [instance.model_dump() for instance in batch]
+            stmt = insert(table).values(values).on_conflict_do_nothing()
+            db_session.exec(stmt)
+            db_session.commit()
+
+    batch_size = 20_000
+    if len(instances) <= batch_size:
+        insert_one_batch(instances)
+    else:
+        for i in tqdm(
+            range(0, len(instances), batch_size),
+            desc=f"Inserting {table.__name__} instances",
+            unit="batch",
+        ):
+            insert_one_batch(instances[i : i + batch_size])
 
 
 def set_tournament_as_scraped(tournament: Tournament) -> None:
