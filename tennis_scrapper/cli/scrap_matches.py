@@ -20,7 +20,7 @@ from db.db_utils import (
 )
 from db.models import Match, Player, Tournament
 from data.elo import add_elo_rating
-from utils.http_utils import get_with_retry
+from utils.http_utils import async_get_with_retry
 from utils.str_utils import remove_digits, remove_punctuation
 
 url_to_players_var: contextvars.ContextVar[dict[str, Optional[Player]]] = (
@@ -215,8 +215,8 @@ async def extract_matches_and_players(
         match = Match(
             tournament_id=tournament.tournament_id,
             surface=tournament.surface,
-            player1_id=player1.player_id,
-            player2_id=player2.player_id,
+            player_1_id=player1.player_id,
+            player_2_id=player2.player_id,
             **match_data,
         )
         tournament_matches.append(match)
@@ -236,7 +236,7 @@ async def scrap_on_tournament(
     for extension in extensions:
         url = f"{base_url}{extension}"  # <-- corrige la concaténation ici
         try:
-            html: Optional[str] = await get_with_retry(
+            html: Optional[str] = await async_get_with_retry(
                 session, url, headers={"Accept": "text/html"}
             )
         except RuntimeError:
@@ -302,29 +302,28 @@ def scrap_matches(
         False, "--clear", help="Clear Match and Player tables before scraping"
     ),
 ) -> None:
-    # tournaments = get_table(Tournament)
-    # tournaments = list(
-    #     filter(
-    #         lambda t: t.date is not None and from_year <= t.date.year <= to_year,
-    #         tournaments,
-    #     )
-    # )
+    tournaments = get_table(Tournament)
+    tournaments = list(
+        filter(
+            lambda t: t.date is not None and from_year <= t.date.year <= to_year,
+            tournaments,
+        )
+    )
 
-    # tournaments = list(filter(lambda t: not t.has_been_scraped, tournaments))
+    tournaments = list(filter(lambda t: not t.has_been_scraped, tournaments))
 
-    # if clear:
-    #     logger.info("Clearing Match and Player tables before scraping")
-    #     clear_table(Match)
-    #     clear_table(Player)
-    #     unset_all_tournament_as_scraped()
+    if clear:
+        logger.info("Clearing Match and Player tables before scraping")
+        clear_table(Match)
+        clear_table(Player)
+        unset_all_tournament_as_scraped()
 
-    # players = get_table(Player)
-    # url_to_players_var.set(
-    #     {player.player_detail_url_extension: player for player in players}
-    # )
+    players = get_table(Player)
+    url_to_players_var.set(
+        {player.player_detail_url_extension: player for player in players}
+    )
 
-    # asyncio.run(run_scraping(tournaments))
-    add_elo_rating()
+    asyncio.run(run_scraping(tournaments))
 
 
 if __name__ == "__main__":

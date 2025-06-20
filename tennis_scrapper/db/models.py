@@ -98,8 +98,8 @@ class Match(HashedIDModel, table=True):
     match_id: str = Field(default=None, primary_key=True)
     tournament_id: str = Field(foreign_key="tournament.tournament_id", nullable=False)
     date: datetime.datetime = Field(nullable=False)
-    player1_id: str = Field(foreign_key="player.player_id", nullable=False)
-    player2_id: str = Field(foreign_key="player.player_id", nullable=False)
+    player_1_id: str = Field(foreign_key="player.player_id", nullable=False)
+    player_2_id: str = Field(foreign_key="player.player_id", nullable=False)
 
     score: str = Field(
         nullable=False, description="Match score in format '6-3 6-4' or '6-3 3-6 6-4'"
@@ -115,6 +115,36 @@ class Match(HashedIDModel, table=True):
         description="Round of the match (e.g. 'Final', 'Semi-Final', 'Quarter-Final')",
     )
     surface: Surface = Field(nullable=False, description="Match surface type")
+    player_1_elo: float = Field(
+        default=None,
+        nullable=True,
+        description="Elo rating of player 1 before the match",
+    )
+    player_2_elo: float = Field(
+        default=None,
+        nullable=True,
+        description="Elo rating of player 2 before the match",
+    )
+    player_1_elo_on_surface: float = Field(
+        default=None,
+        nullable=True,
+        description="Elo rating of player 1 on the match surface before the match",
+    )
+    player_2_elo_on_surface: float = Field(
+        default=None,
+        nullable=True,
+        description="Elo rating of player 2 on the match surface before the match",
+    )
+    atp_ranking_player_1: int = Field(
+        default=None,
+        nullable=True,
+        description="ATP ranking of player 1 before the match",
+    )
+    atp_ranking_player_2: int = Field(
+        default=None,
+        nullable=True,
+        description="ATP ranking of player 2 before the match",
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -123,12 +153,13 @@ class Match(HashedIDModel, table=True):
         self.match_id = self.generate_hashed_id(
             self.tournament_id,
             self.date,
-            self.player1_id,
-            self.player2_id,
+            self.player_1_id,
+            self.player_2_id,
             self.score,
             self.player_1_odds,
             self.player_2_odds,
             self.round,
+            self.surface,
         )
 
     def __hash__(self):
@@ -142,7 +173,7 @@ class EloSurface(StrEnum):
     ALL = "ALL"
 
 
-class EloRanking(HashedIDModel, table=True):
+class EloRanking(HashedIDModel, table=False):
     elo_ranking_id: str = Field(default=None, primary_key=True)
     player_id: str
     elo_point: float
@@ -155,4 +186,21 @@ class EloRanking(HashedIDModel, table=True):
             raise ValueError(f"Elo ranking ID is already set: {self.elo_ranking_id}")
         self.elo_ranking_id = self.generate_hashed_id(
             self.player_id, self.elo_point, self.date, self.surface
+        )
+
+
+class Ranking(HashedIDModel, table=True):
+    ranking_id: str = Field(default=None, primary_key=True)
+    date: datetime.date
+    rank: float
+    player_name: str
+    player_url: str
+    points: float
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.ranking_id:
+            raise ValueError(f"Ranking ID is already set: {self.ranking_id}")
+        self.ranking_id = self.generate_hashed_id(
+            self.date, self.rank, self.player_name, self.player_url, self.points
         )

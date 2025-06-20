@@ -1,7 +1,7 @@
 from typing import Type, TypeVar, Optional
 
 from sqlalchemy.dialects.sqlite import insert
-from sqlmodel import SQLModel, Sequence, create_engine, Session, select, delete
+from sqlmodel import SQLModel, Sequence, create_engine, Session, select, delete, func
 from tqdm import tqdm
 
 from conf.config import settings

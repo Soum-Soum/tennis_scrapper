@@ -7,7 +7,7 @@ from loguru import logger
 
 from conf.config import settings
 from db.models import Gender, Player
-from utils.http_utils import get_with_retry
+from utils.http_utils import async_get_with_retry
 
 
 def extract_player(html, player_detail_url_extension: str) -> Player:
@@ -72,7 +72,7 @@ async def fetch_player(
     url = f"{settings.base_url}/{player_detail_url_extension}"
     logger.info(f"Scraping player data from {player_name} : {url}")
     try:
-        html: Optional[str] = await get_with_retry(
+        html: Optional[str] = await async_get_with_retry(
             session, url, headers={"Accept": "text/html"}
         )
     except RuntimeError as e:
