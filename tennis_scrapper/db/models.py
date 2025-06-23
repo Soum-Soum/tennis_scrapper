@@ -98,9 +98,14 @@ class Match(HashedIDModel, table=True):
     match_id: str = Field(default=None, primary_key=True)
     tournament_id: str = Field(foreign_key="tournament.tournament_id", nullable=False)
     date: datetime.datetime = Field(nullable=False)
+    circuit: str = Field(nullable=False, description="ATP or WTA circuit")
+    round: str = Field(
+        nullable=True,
+        description="Round of the match (e.g. 'Final', 'Semi-Final', 'Quarter-Final')",
+    )
+    surface: Surface = Field(nullable=False, description="Match surface type")
     player_1_id: str = Field(foreign_key="player.player_id", nullable=False)
     player_2_id: str = Field(foreign_key="player.player_id", nullable=False)
-
     score: str = Field(
         nullable=False, description="Match score in format '6-3 6-4' or '6-3 3-6 6-4'"
     )
@@ -110,11 +115,6 @@ class Match(HashedIDModel, table=True):
     player_2_odds: float = Field(
         nullable=False, description="Odds for player 2 to win the match"
     )
-    round: str = Field(
-        nullable=True,
-        description="Round of the match (e.g. 'Final', 'Semi-Final', 'Quarter-Final')",
-    )
-    surface: Surface = Field(nullable=False, description="Match surface type")
     player_1_elo: float = Field(
         default=None,
         nullable=True,
@@ -173,7 +173,7 @@ class Ranking(HashedIDModel, table=True):
     player_name: str
     player_detail_url_extension: str
     points: float
-    circuit: Literal["ATP", "WTA"] = Field(
+    circuit: str = Field(
         nullable=False, description="ATP or WTA circuit"
     )
     player_id: str = Field(

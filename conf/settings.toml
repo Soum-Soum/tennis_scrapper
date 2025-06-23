@@ -1,4 +1,5 @@
 [default]
-db_url = "sqlite:////home/pierre/dev/tennis_scrapper/tennis_data.db"
+# db_url = "sqlite:////home/pierre/dev/tennis_scrapper/tennis_data.db"
+db_url = "postgresql+psycopg2://postgres:postgres@localhost:5432/tennis_data"
 base_url = "https://www.tennisexplorer.com"
 tournament_scraping_concurrency_limit = 10

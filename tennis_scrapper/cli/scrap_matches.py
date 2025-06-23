@@ -18,8 +18,7 @@ from db.db_utils import (
     set_tournament_as_scraped,
     unset_all_tournament_as_scraped,
 )
-from db.models import Match, Player, Tournament
-from data.elo import add_elo_rating
+from db.models import Match, Player, Tournament, Gender
 from utils.http_utils import async_get_with_retry
 from utils.str_utils import remove_digits, remove_punctuation
 
@@ -212,9 +211,12 @@ async def extract_matches_and_players(
             )
             continue
 
+        circuit = "ATP" if player1.gender is Gender.MEN else "WTA"
+
         match = Match(
             tournament_id=tournament.tournament_id,
             surface=tournament.surface,
+            circuit=circuit,
             player_1_id=player1.player_id,
             player_2_id=player2.player_id,
             **match_data,
@@ -259,8 +261,8 @@ async def scrap_on_tournament(
         all_tournament_matches.update(tournament_matches)
         all_tournament_players.update(tournament_players)
 
-    insert_if_not_exists(table=Match, instances=list(all_tournament_matches))
     insert_if_not_exists(table=Player, instances=list(all_tournament_players))
+    insert_if_not_exists(table=Match, instances=list(all_tournament_matches))
     set_tournament_as_scraped(tournament=tournament)
     logger.success(f"Tournament {tournament.name} matches scraped and stored")
 

@@ -1,15 +1,47 @@
 from typing import Type, TypeVar, Optional
-
-from sqlalchemy.dialects.sqlite import insert
-from sqlmodel import SQLModel, Sequence, create_engine, Session, select, delete, func
+import sqlalchemy
+from sqlmodel import (
+    SQLModel,
+    Sequence,
+    create_engine,
+    Session,
+    inspect,
+    select,
+    delete,
+    func,
+)
+from sqlalchemy.dialects.postgresql import insert
 from tqdm import tqdm
+import sys
 
 from conf.config import settings
 from db.models import Tournament, Player
 
 DB_PATH = settings.db_url
 
-engine = create_engine(DB_PATH)
+
+def get_engine():
+    try:
+        return create_engine(DB_PATH, echo=False)
+    except Exception as e:
+        print(f"Error connecting to database: {e}")
+        print("If using PostgreSQL, make sure the database is running and accessible.")
+        sys.exit(1)
+
+
+def create_db_and_tables():
+    engine = get_engine()
+    SQLModel.metadata.create_all(engine)
+    return engine
+
+
+def get_session(engine=None):
+    if engine is None:
+        engine = get_engine()
+    return Session(engine)
+
+
+engine = get_engine()
 SQLModel.metadata.create_all(engine)
 
 
@@ -29,14 +61,40 @@ def clear_table(table: Type[T]) -> None:
         db_session.commit()
 
 
+def get_conflict_columns(engine, table):
+    inspector = inspect(engine)
+    table_name = table.__tablename__
+
+    unique_constraints = inspector.get_unique_constraints(table_name)
+    if unique_constraints:
+        columns = unique_constraints[0]["column_names"]
+        if columns:
+            return columns
+
+    pk_constraint = inspector.get_pk_constraint(table_name)
+    pk_columns = pk_constraint.get("constrained_columns", [])
+    if pk_columns:
+        return pk_columns
+
+    raise ValueError(
+        f"No unique or primary key constraint found for table {table_name}"
+    )
+
+
 def insert_if_not_exists(table: Type[T], instances: list[T]) -> None:
     if len(instances) == 0:
         return
 
+    conflict_columns = get_conflict_columns(engine, table)
+
     def insert_one_batch(batch: list[T]) -> None:
         with Session(engine) as db_session:
             values = [instance.model_dump() for instance in batch]
-            stmt = insert(table).values(values).on_conflict_do_nothing()
+            stmt = (
+                insert(table)
+                .values(values)
+                .on_conflict_do_nothing(index_elements=conflict_columns)
+            )
             db_session.exec(stmt)
             db_session.commit()
 

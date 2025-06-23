@@ -2,12 +2,13 @@ import asyncio
 import datetime
 
 import aiohttp
+from loguru import logger
 import typer
 from bs4 import BeautifulSoup
 from sqlmodel import Session, text, select, func
 from tqdm.asyncio import tqdm
 
-from db.db_utils import engine, insert_if_not_exists
+from db.db_utils import clear_table, engine, insert_if_not_exists
 from db.models import Ranking, Match
 from utils.http_utils import async_get_with_retry
 
@@ -113,16 +114,23 @@ def add_player_id_to_ranking():
 
 
 @app.command()
-def scrap_ranking():
-    with Session(engine) as session:
-        min_date, max_date = session.exec(
-            select(
-                func.min(Match.date).label("date_min"),
-                func.max(Match.date).label("date_max"),
-            )
-        ).first()
+def scrap_ranking(
+    clear: bool = typer.Option(False, help="Clear existing rankings before scraping")
+):
 
-    start_year = min_date.year
-    end_year = max_date.year
-    asyncio.run(run_scrap_ranking(start_year, end_year))
+    # with Session(engine) as session:
+    #     if clear:
+    #         clear_table(Ranking)
+    #         logger.info("Cleared existing rankings table.")
+
+    #     min_date, max_date = session.exec(
+    #         select(
+    #             func.min(Match.date).label("date_min"),
+    #             func.max(Match.date).label("date_max"),
+    #         )
+    #     ).first()
+
+    # start_year = min_date.year
+    # end_year = max_date.year
+    # asyncio.run(run_scrap_ranking(start_year, end_year))
     add_player_id_to_ranking()

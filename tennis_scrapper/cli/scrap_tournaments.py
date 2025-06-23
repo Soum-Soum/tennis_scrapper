@@ -10,7 +10,7 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlmodel import Session
 
 from conf.config import settings
-from db.db_utils import engine
+from db.db_utils import engine, insert_if_not_exists
 from db.models import Gender, Tournament, Surface
 
 
@@ -99,12 +99,9 @@ async def fetch_and_store_tournaments(
         if not tournaments:
             logger.info(f"No tournaments found for {url_year}")
             return 0
-        # Utilise SQLAlchemy Core pour l'upsert
-        with Session(engine) as db_session:
-            values = [tournament.model_dump() for tournament in tournaments]
-            stmt = insert(Tournament).values(values).on_conflict_do_nothing()
-            db_session.exec(stmt)
-            db_session.commit()
+
+        insert_if_not_exists(Tournament, tournaments)
+
         logger.success(f"{len(tournaments)} tournaments inserted for {url_year}")
         return len(tournaments)
 
