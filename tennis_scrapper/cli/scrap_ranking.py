@@ -1,16 +1,14 @@
 import asyncio
 import datetime
-from typing import Any, Coroutine
 
 import aiohttp
 import typer
 from bs4 import BeautifulSoup
-from loguru import logger
-from sqlmodel import Session, select, func
+from sqlmodel import Session, text, select, func
 from tqdm.asyncio import tqdm
 
 from db.db_utils import engine, insert_if_not_exists
-from db.models import Match, Ranking
+from db.models import Ranking, Match
 from utils.http_utils import async_get_with_retry
 
 app = typer.Typer()
@@ -49,19 +47,27 @@ async def scrap_one_date(
         return []
     trs = tbody.find_all("tr")
     rankings = []
+    if "wta-women" in url:
+        circuit = "WTA"
+    elif "atp-men" in url:
+        circuit = "ATP"
+    else:
+        raise ValueError(f"Unknown circuit in URL: {url}")
+
     for tr in trs:
         rank = float(tr.find("td", class_="rank").get_text(strip=True))
         td_name = tr.find("td", class_="t-name")
         player_name = td_name.find("a").get_text(strip=True)
-        player_url = td_name.find("a")["href"]
+        player_detail_url_extension = td_name.find("a")["href"]
         points = float(tr.find("td", class_="long-point").get_text(strip=True))
         rankings.append(
             Ranking(
                 date=datetime.datetime.strptime(date, "%Y-%m-%d").date(),
                 rank=rank,
                 player_name=player_name,
-                player_url=player_url,
+                player_detail_url_extension=player_detail_url_extension,
                 points=points,
+                circuit=circuit,
             )
         )
 
@@ -90,7 +96,20 @@ async def run_scrap_ranking(start_year: int, end_year: int) -> None:
             for date in tqdm(dates, desc=f"Scraping rankings for {url}", leave=False):
                 await scrape_one_date_ranking(session, url, date)
 
-        # await tqdm.gather(*tasks, desc="Scraping rankings for dates")
+
+def add_player_id_to_ranking():
+    with Session(engine) as session:
+        stmt = text(
+            """
+                UPDATE ranking
+                SET player_id = player.player_id
+                FROM player
+                WHERE ranking.player_detail_url_extension = player.player_detail_url_extension
+                AND ranking.player_id IS NULL;
+            """
+        )
+        session.exec(stmt)
+        session.commit()
 
 
 @app.command()
@@ -106,3 +125,4 @@ def scrap_ranking():
     start_year = min_date.year
     end_year = max_date.year
     asyncio.run(run_scrap_ranking(start_year, end_year))
+    add_player_id_to_ranking()

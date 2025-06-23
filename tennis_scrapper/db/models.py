@@ -1,7 +1,7 @@
 import datetime
 import hashlib
 from enum import StrEnum
-from typing import Self
+from typing import Literal, Self
 
 from loguru import logger
 from sqlmodel import Field, SQLModel
@@ -166,6 +166,37 @@ class Match(HashedIDModel, table=True):
         return int(self.match_id, 16)
 
 
+class Ranking(HashedIDModel, table=True):
+    ranking_id: str = Field(default=None, primary_key=True)
+    date: datetime.date
+    rank: float
+    player_name: str
+    player_detail_url_extension: str
+    points: float
+    circuit: Literal["ATP", "WTA"] = Field(
+        nullable=False, description="ATP or WTA circuit"
+    )
+    player_id: str = Field(
+        default=None,
+        foreign_key="player.player_id",
+        nullable=True,
+        description="Player ID for the ranking",
+    )
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.ranking_id:
+            raise ValueError(f"Ranking ID is already set: {self.ranking_id}")
+        self.ranking_id = self.generate_hashed_id(
+            self.date,
+            self.rank,
+            self.player_name,
+            self.player_detail_url_extension,
+            self.points,
+            self.circuit
+        )
+
+
 class EloSurface(StrEnum):
     CLAY = "CLAY"
     GRASS = "GRASS"
@@ -186,21 +217,4 @@ class EloRanking(HashedIDModel, table=False):
             raise ValueError(f"Elo ranking ID is already set: {self.elo_ranking_id}")
         self.elo_ranking_id = self.generate_hashed_id(
             self.player_id, self.elo_point, self.date, self.surface
-        )
-
-
-class Ranking(HashedIDModel, table=True):
-    ranking_id: str = Field(default=None, primary_key=True)
-    date: datetime.date
-    rank: float
-    player_name: str
-    player_url: str
-    points: float
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        if self.ranking_id:
-            raise ValueError(f"Ranking ID is already set: {self.ranking_id}")
-        self.ranking_id = self.generate_hashed_id(
-            self.date, self.rank, self.player_name, self.player_url, self.points
         )
