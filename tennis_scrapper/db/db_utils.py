@@ -1,5 +1,7 @@
+import sys
 from typing import Type, TypeVar, Optional
-import sqlalchemy
+
+from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import (
     SQLModel,
     Sequence,
@@ -8,11 +10,8 @@ from sqlmodel import (
     inspect,
     select,
     delete,
-    func,
 )
-from sqlalchemy.dialects.postgresql import insert
 from tqdm import tqdm
-import sys
 
 from conf.config import settings
 from db.models import Tournament, Player

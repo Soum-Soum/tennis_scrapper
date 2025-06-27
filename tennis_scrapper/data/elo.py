@@ -2,6 +2,7 @@ import datetime
 
 from loguru import logger
 from tqdm import tqdm
+
 from db.db_utils import get_table, insert_if_not_exists
 from db.models import EloRanking, EloSurface, Player, Surface, Match
 
