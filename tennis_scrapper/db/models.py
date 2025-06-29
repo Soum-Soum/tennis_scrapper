@@ -1,7 +1,7 @@
 import datetime
 import hashlib
 from enum import StrEnum
-from typing import Self
+from typing import Self, List
 
 from sqlmodel import Field, SQLModel
 

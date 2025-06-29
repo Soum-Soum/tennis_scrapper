@@ -103,7 +103,7 @@ def add_player_id_to_ranking():
                 UPDATE ranking
                 SET player_id = player.player_id
                 FROM player
-                WHERE ranking.player_detail_url_extension = player.player_detail_url_extension
+                WHERE ranking.player_detail_url_extension = player.url_extension
                 AND ranking.player_id IS NULL;
             """
         )
