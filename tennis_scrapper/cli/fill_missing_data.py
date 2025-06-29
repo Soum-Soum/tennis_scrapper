@@ -2,6 +2,7 @@ import typer
 from loguru import logger
 from sqlmodel import Session, text
 
+from data.add_atp import add_atp
 from data.add_elo import add_elo
 from db.db_utils import engine
 
@@ -43,5 +44,7 @@ app = typer.Typer()
 @app.command()
 def fill_missing_data():
     update_match_players_ids()
+    add_atp()
     add_elo()
+
     typer.echo("Missing player IDs in matches have been updated.")
