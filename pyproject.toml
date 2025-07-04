@@ -18,6 +18,8 @@ dependencies = [
     "tqdm>=4.67.1",
     "typer>=0.16.0",
     "psycopg2-binary>=2.9.9",
+    "asyncpg>=0.30.0",
+    "alembic>=1.16.2",
 ]
 
 [dependency-groups]

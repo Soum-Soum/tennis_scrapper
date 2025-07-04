@@ -3,7 +3,7 @@ import hashlib
 from enum import StrEnum
 from typing import Self, List
 
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, Index
 
 
 class Surface(StrEnum):
@@ -83,7 +83,7 @@ class Player(HashedIDModel, table=True):
 class Match(HashedIDModel, table=True):
     match_id: str = Field(default=None, primary_key=True)
     tournament_id: str = Field(foreign_key="tournament.tournament_id", nullable=False)
-    date: datetime.date = Field(nullable=False)
+    date: datetime.date = Field(nullable=False, index=True)
     players_gender: Gender = Field(nullable=False)
     round: str = Field(
         nullable=True,
@@ -92,13 +92,13 @@ class Match(HashedIDModel, table=True):
     )
     surface: Surface = Field(nullable=False, description="Match surface type")
     player_1_id: str = Field(
-        foreign_key="player.player_id", nullable=True, default=None
+        foreign_key="player.player_id", nullable=True, default=None, index=True
     )
     player_1_url_extension: str = Field(
         nullable=False, description="URL extension for player 1 details"
     )
     player_2_id: str = Field(
-        foreign_key="player.player_id", nullable=True, default=None
+        foreign_key="player.player_id", nullable=True, default=None, index=True
     )
     player_2_url_extension: str = Field(
         nullable=False, description="URL extension for player 2 details"
@@ -151,6 +151,10 @@ class Match(HashedIDModel, table=True):
         default=None,
         nullable=True,
         description="ATP points of player 2 before the match",
+    )
+
+    __table_args__ = (
+        Index("idx_match_players_date", "player_1_id", "player_2_id", "date"),
     )
 
     def __init__(self, **kwargs):

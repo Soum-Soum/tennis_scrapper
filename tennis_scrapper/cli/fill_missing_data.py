@@ -47,4 +47,4 @@ def fill_missing_data():
     add_atp()
     add_elo()
 
-    typer.echo("Missing player IDs in matches have been updated.")
+    logger.info("Missing player IDs in matches have been updated.")

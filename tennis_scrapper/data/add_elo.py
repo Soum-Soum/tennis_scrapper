@@ -120,6 +120,8 @@ def add_elo():
             current_date = min_date + datetime.timedelta(days=days_diff)
             next_date = current_date + datetime.timedelta(days=7)
 
+            logger.info(f"Processing matches from {current_date} to {next_date}")
+
             matches = session.exec(
                 select(Match)
                 .where(
