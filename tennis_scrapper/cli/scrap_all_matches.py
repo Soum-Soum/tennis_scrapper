@@ -65,11 +65,9 @@ def get_default_tournament(
 
 def get_tournament(
     url_extension: Optional[str],
-    tournament_name: str,
     year: int,
     players_gender: Gender,
     db_session: Session,
-    client_session: aiohttp.ClientSession,
 ) -> Tournament:
     tournament = db_session.exec(
         select(Tournament).where(
@@ -119,7 +117,6 @@ async def scrape_matches_from_url(
         players_gender = Gender.MEN if "atp-single" in url else Gender.WOMAN
         row_id_to_tournament = {}
         for row_id, head_row in heads:
-            tournament_name = head_row.find("td", class_="t-name").get_text(strip=True)
             tournament_url_extension_a = head_row.find("td", class_="t-name").find("a")
             if not tournament_url_extension_a:
                 current_tournament = get_default_tournament(
@@ -129,11 +126,9 @@ async def scrape_matches_from_url(
                 tournament_url_extension = tournament_url_extension_a["href"]
                 current_tournament = get_tournament(
                     url_extension=tournament_url_extension,
-                    tournament_name=tournament_name,
                     year=date.year,
                     players_gender=players_gender,
                     db_session=db_session,
-                    client_session=session,
                 )
 
             row_id_to_tournament[row_id] = current_tournament
@@ -172,7 +167,7 @@ async def scrape_matches_from_url(
                     "href"
                 ]
             except TypeError:
-                logger.warning("Unable to find player url -> skip match")
+                logger.warning(f"Unable to find player URLs at {url} -> skipping row")
                 continue
 
             player_1_odds_str = (
@@ -204,7 +199,57 @@ async def scrape_matches_from_url(
         db_session.commit()
 
 
-@app.command()
+def _get_date_interval(from_year: int, to_year: int):
+    """Détermine la période à scraper, en tenant compte de la DB."""
+    with Session(engine) as db_session:
+        max_date_in_db = db_session.exec(
+            select(Match.date).order_by(Match.date.desc())
+        ).first()
+
+    extensions = ["atp-single", "wta-single"]
+
+    start_date = datetime.date(from_year, 1, 1)
+    if max_date_in_db:
+        start_date = max(start_date, max_date_in_db + datetime.timedelta(days=1))
+    end_date = min(datetime.date(to_year, 12, 31), datetime.date.today())
+
+    return start_date, end_date, extensions
+
+
+async def _scrape_matches(
+    start_date: datetime.date, end_date: datetime.date, extensions: List[str]
+):
+    """Lance l'ensemble des tâches de scraping pour chaque date et extension."""
+    semaphore = asyncio.Semaphore(10)
+    url_template = "https://www.tennisexplorer.com/results/?type={extension}&year={year}&month={month}&day={day}"
+    day_diff = (end_date - start_date).days + 1  # +1 pour inclure le end_date
+
+    async def _scrape_day(date: datetime.date, extension: str):
+        async with semaphore:
+            url = url_template.format(
+                extension=extension,
+                year=date.year,
+                month=date.month,
+                day=date.day,
+            )
+            async with aiohttp.ClientSession() as session:
+                try:
+                    await scrape_matches_from_url(date=date, url=url, session=session)
+                except Exception as e:
+                    logger.error(f"Error scraping {date} ({extension}) : {url} : {e}")
+
+    tasks = [
+        _scrape_day(start_date + datetime.timedelta(days=day_offset), extension)
+        for extension in extensions
+        for day_offset in range(day_diff)
+    ]
+
+    await tqdm.gather(*tasks, desc="Scraping matches for each day", unit="day")
+
+
+@app.command(
+    help="Scrape all matches from Tennis Explorer for a given year range and store them in the database."
+)
 def scrap_all_matches(
     from_year: int = typer.Option(1990, "--from", help="Start year (default: 1990)"),
     to_year: int = typer.Option(datetime.datetime.now().year, "--to", help="End year"),
@@ -212,57 +257,16 @@ def scrap_all_matches(
         False, "--clear-db", help="Clear the database before scraping"
     ),
 ):
+    """Main command to scrape matches within a year range."""
     if clear_db:
         logger.info("Clearing the database...")
         clear_table(Match)
 
-    with Session(engine) as db_session:
-        max_date_in_db = db_session.exec(
-            select(Match.date).order_by(Match.date.desc())
-        ).first()
-
-    extensions = ["atp-single", "wta-single"]
-    url_template = "https://www.tennisexplorer.com/results/?type={extension}&year={year}&month={month}&day={day}"
-    start_date = datetime.date(from_year, 1, 1)
-    if max_date_in_db:
-        start_date = max(start_date, max_date_in_db + datetime.timedelta(days=1))
-    end_date = min(datetime.date(to_year, 12, 31), datetime.date.today())
+    start_date, end_date, extensions = _get_date_interval(from_year, to_year)
     logger.info(
         f"Scraping matches from {start_date} to {end_date} for extensions: {extensions}"
     )
-    day_diff = (end_date - start_date).days
 
-    async def launch_scraping() -> None:
-        semaphore = asyncio.Semaphore(10)
-
-        async def wrapper_scrape(date: datetime, extension: str):
-            async with semaphore:
-                url = url_template.format(
-                    extension=extension,
-                    year=date.year,
-                    month=date.month,
-                    day=date.day,
-                )
-                async with aiohttp.ClientSession() as session:
-                    try:
-                        await scrape_matches_from_url(
-                            date=date, url=url, session=session
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Error on scraping for date : {date}. Url : {url}: {e}"
-                        )
-                        raise e
-
-        tasks = []
-        for extension in extensions:
-            for day_offset in range(day_diff):
-                current_date = start_date + datetime.timedelta(days=day_offset)
-
-                tasks.append(wrapper_scrape(current_date, extension))
-
-        await tqdm.gather(
-            *tasks, desc="Scraping matches for every days of the interval", unit="day"
-        )
-
-    asyncio.run(launch_scraping())
+    asyncio.run(
+        _scrape_matches(start_date=start_date, end_date=end_date, extensions=extensions)
+    )

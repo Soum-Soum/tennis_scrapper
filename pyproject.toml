@@ -20,6 +20,8 @@ dependencies = [
     "psycopg2-binary>=2.9.9",
     "asyncpg>=0.30.0",
     "alembic>=1.16.2",
+    "polars>=1.31.0",
+    "pyarrow>=20.0.0",
 ]
 
 [dependency-groups]

@@ -114,7 +114,9 @@ def add_player_id_to_ranking():
 app = typer.Typer()
 
 
-@app.command()
+@app.command(
+    help="Scrape rankings from Tennis Explorer and store them in the database."
+)
 def scrap_ranking(
     clear: bool = typer.Option(False, help="Clear existing rankings before scraping")
 ):

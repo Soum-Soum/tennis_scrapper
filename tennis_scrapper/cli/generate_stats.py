@@ -27,6 +27,7 @@ from db.models import Match, Player, Surface
 
 app = typer.Typer(help="Generate comprehensive tennis match statistics")
 
+
 def get_player_by_name(name: str) -> Optional[Player]:
     """Get a player by name using fuzzy matching."""
     with Session(engine) as session:
@@ -34,6 +35,7 @@ def get_player_by_name(name: str) -> Optional[Player]:
             select(Player).where(Player.name.like(f"%{name}%"))
         ).first()
         return player
+
 
 def is_match_valid(match: Match) -> bool:
     def validate_score_str(score_str: str) -> bool:
@@ -333,7 +335,7 @@ async def compute_one_match_stat(
         # Save to file
         output_file = output_dir / f"{match.match_id}.json"
         with open(output_file, "w") as f:
-            json.dump(data, f, indent=4)
+            json.dump(data, f)
         logger.info(f"Processed match {match.match_id} and saved to {output_file}")
 
         return data
@@ -392,11 +394,10 @@ async def process_matches_async(
             override=override,
         )
 
-
     await async_engine.dispose()
 
 
-@app.command()
+@app.command(help="Generate comprehensive tennis match statistics.")
 def generate_stats(
     output_dir: str = typer.Option(
         "output", "--output", "-o", help="Output directory for JSON files"
@@ -419,7 +420,7 @@ def generate_stats(
         False,
         "--override",
         help="Override existing output files if they already exist",
-    )
+    ),
 ):
     """
     Generate comprehensive tennis match statistics.

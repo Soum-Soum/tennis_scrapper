@@ -41,7 +41,7 @@ def update_match_players_ids():
 app = typer.Typer()
 
 
-@app.command()
+@app.command("Fill missing player IDs in matches and add ATP and Elo ratings.")
 def fill_missing_data():
     update_match_players_ids()
     add_atp()

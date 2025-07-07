@@ -38,16 +38,25 @@ class HashedIDModel(SQLModel):
 class Tournament(HashedIDModel, table=True):
     tournament_id: str = Field(default=None, primary_key=True)
     name: str = Field(nullable=False, description="Tournament name")
-    year: int = Field(description="Year of the tournament", nullable=False)
+    year: int = Field(description="Year of the tournament", nullable=False, index=True)
     surface: Surface = Field(nullable=False, description="Tournament surface type")
     cash_prize: float = Field(nullable=False, description="Cash prize in USD")
     players_gender: Gender = Field(
-        nullable=False, description="Is tournament for men or for women"
+        nullable=False, description="Is tournament for men or for women", index=True
     )
     url_extension: str = Field(
-        nullable=False, description="URL extension for match list"
+        nullable=False, description="URL extension for match list", index=True
     )
     has_been_scraped: bool = Field(default=False)
+
+    __table_args__ = (
+        Index(
+            "idx_tournament_lookup",
+            "url_extension",
+            "year",
+            "players_gender",
+        ),
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

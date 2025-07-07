@@ -98,7 +98,7 @@ async def fetch_player(
 app = typer.Typer()
 
 
-@app.command()
+@app.command(help="Scrape players from Tennis Explorer and store them in the database.")
 def scrap_players(
     clear_db: bool = typer.Option(
         False,
