@@ -1,3 +1,5 @@
+import warnings
+
 import typer
 from loguru import logger
 from tqdm import tqdm
@@ -28,4 +30,5 @@ if __name__ == "__main__":
             )
         ]
     )
+    warnings.simplefilter("error")
     app()

@@ -11,7 +11,7 @@ import asyncio
 import datetime
 import json
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, Any
 
 import numpy as np
 import typer
@@ -27,7 +27,6 @@ from db.models import Match, Player, Surface
 
 app = typer.Typer(help="Generate comprehensive tennis match statistics")
 
-
 def get_player_by_name(name: str) -> Optional[Player]:
     """Get a player by name using fuzzy matching."""
     with Session(engine) as session:
@@ -35,6 +34,15 @@ def get_player_by_name(name: str) -> Optional[Player]:
             select(Player).where(Player.name.like(f"%{name}%"))
         ).first()
         return player
+
+def is_match_valid(match: Match) -> bool:
+    def validate_score_str(score_str: str) -> bool:
+        allowed_chars = set("0123456789- ")
+        return all(char in allowed_chars for char in score_str)
+
+    if not match.score or not validate_score_str(match.score):
+        return False
+    return True
 
 
 async def get_player_history_at_dt(
@@ -54,6 +62,7 @@ async def get_player_history_at_dt(
         .order_by(Match.date)
     )
     matches = result.all()
+    matches = list(filter(is_match_valid, matches))
 
     matches_on_surface = [match for match in matches if match.surface == surface]
 
@@ -68,7 +77,10 @@ async def get_player_history_at_dt(
 
 
 async def get_h2h_matches(
-    player_1_id: str, player_2_id: str, db_session: AsyncSession
+    player_1_id: str,
+    player_2_id: str,
+    match_date: datetime.date,
+    db_session: AsyncSession,
 ) -> List[Match]:
     """Get head-to-head matches between two players."""
     result = await db_session.exec(
@@ -76,10 +88,12 @@ async def get_h2h_matches(
         .where(
             or_(Match.player_1_id == player_1_id, Match.player_2_id == player_1_id),
             or_(Match.player_1_id == player_2_id, Match.player_2_id == player_2_id),
+            Match.date < match_date,
         )
         .order_by(Match.date)
     )
     matches = result.all()
+    matches = list(filter(is_match_valid, matches))
     return sorted(matches, key=lambda x: x.date)
 
 
@@ -131,6 +145,12 @@ def is_match_sorted(matches: List[Match]) -> bool:
     return all(matches[i].date <= matches[i + 1].date for i in range(len(matches) - 1))
 
 
+def safe_mean(arr, default=0.0):
+    if not isinstance(arr, np.ndarray):
+        arr = np.array(arr)
+    return np.mean(arr).item() if arr.size > 0 else default
+
+
 def compute_player_stats(
     matches: List[Match], player_id: str, k: Optional[List[int]] = None
 ) -> Dict[str, float]:
@@ -155,11 +175,11 @@ def compute_player_stats(
             start=[],
         )
 
-        games_won_by_set = np.mean(all_games_won).item()
-        games_conceded_by_set = np.mean(all_games_conceded).item()
-        winning_rate = np.mean(
+        games_won_by_set = safe_mean(np.array(all_games_won))
+        games_conceded_by_set = safe_mean(np.array(all_games_conceded))
+        winning_rate = safe_mean(
             [is_winner(match, player_id) for match in selected_matches]
-        ).item()
+        )
 
         first_elo = get_elo(selected_matches[0], player_id)
         last_elo = get_elo(selected_matches[-1], player_id)
@@ -184,6 +204,9 @@ def compute_h2h_stats(
 
     stats["h2h_player_1_wins"] = player_1_wins
     stats["h2h_player_2_wins"] = player_2_wins
+    stats["h2h_player_1_win_rate"] = player_1_wins / len(matches) if matches else 0.0
+    stats["h2h_player_2_win_rate"] = player_2_wins / len(matches) if matches else 0.0
+    stats["h2h_total_matches"] = len(matches)
 
     return stats
 
@@ -193,13 +216,38 @@ def compute_player_age(player: Player, date: datetime.date) -> float:
     return (date - player.birth_date).days / 365.25
 
 
+def compute_diff_stats(data: dict[str, Any]) -> dict[str, Any]:
+
+    diffs = {}
+    for k_1, v in data.items():
+        if "player_1" not in k_1:
+            continue
+
+        k_2 = k_1.replace("player_1", "player_2")
+        if k_2 not in data:
+            continue
+
+        v2 = data[k_2]
+        if isinstance(v, (int, float)) and isinstance(v2, (int, float)):
+            diff = v - v2
+
+            k_diff = k_1.replace("player_1", "diff")
+            diffs[k_diff] = diff
+
+    return {**data, **diffs}
+
+
 async def compute_one_match_stat(
     match: Match,
     async_engine: AsyncEngine,
     player_id_to_player: Dict[str, Player],
     ks: List[int],
     output_dir: Path,
+    override: bool,
 ) -> Dict:
+    if not override and (output_dir / f"{match.match_id}.json").exists():
+        logger.info(f"Skipping match {match.match_id}, already processed.")
+        return {}
 
     async with AsyncSession(async_engine) as db_session:
 
@@ -258,6 +306,7 @@ async def compute_one_match_stat(
         h2h_matches = await get_h2h_matches(
             player_1_id=player_1.player_id,
             player_2_id=player_2.player_id,
+            match_date=match.date,
             db_session=db_session,
         )
         h2h_stats = compute_h2h_stats(
@@ -276,6 +325,8 @@ async def compute_one_match_stat(
             **h2h_stats,
         }
 
+        data = compute_diff_stats(data)
+
         # Convert date to string for JSON serialization
         data["date"] = str(data["date"])
 
@@ -283,6 +334,7 @@ async def compute_one_match_stat(
         output_file = output_dir / f"{match.match_id}.json"
         with open(output_file, "w") as f:
             json.dump(data, f, indent=4)
+        logger.info(f"Processed match {match.match_id} and saved to {output_file}")
 
         return data
 
@@ -290,7 +342,7 @@ async def compute_one_match_stat(
 def load_matches_and_players(
     years_offset: int = 2,
 ) -> Tuple[List[Match], Dict[str, Player]]:
-    """Load matches and players from database."""
+    """Load matches and players from a database."""
     logger.info("Loading matches and players from database...")
 
     with Session(engine) as session:
@@ -324,25 +376,22 @@ async def process_matches_async(
     ks: List[int],
     output_path: Path,
     async_db_url: str,
+    override: bool,
 ):
     """Process matches asynchronously."""
     # Create async engine and session
     async_engine = create_async_engine(async_db_url, echo=False)
 
-    # Create tasks for all matches
-    tasks = [
-        compute_one_match_stat(
+    for match in tqdm(matches, desc="Processing matches", unit="match"):
+        await compute_one_match_stat(
             match=match,
             async_engine=async_engine,
             player_id_to_player=player_id_to_player,
             ks=ks,
             output_dir=output_path,
+            override=override,
         )
-        for match in matches
-    ]
 
-    # Execute tasks with progress bar
-    await tqdm.gather(*tasks, desc="Processing matches", unit="match")
 
     await async_engine.dispose()
 
@@ -350,7 +399,7 @@ async def process_matches_async(
 @app.command()
 def generate_stats(
     output_dir: str = typer.Option(
-        "Output", "--output", "-o", help="Output directory for JSON files"
+        "output", "--output", "-o", help="Output directory for JSON files"
     ),
     async_db_url: str = typer.Option(
         settings.async_db_url, "--db-url", help="Async database URL"
@@ -366,6 +415,11 @@ def generate_stats(
         "--k-values",
         help="Comma-separated list of k values for statistics",
     ),
+    override: bool = typer.Option(
+        False,
+        "--override",
+        help="Override existing output files if they already exist",
+    )
 ):
     """
     Generate comprehensive tennis match statistics.
@@ -394,7 +448,7 @@ def generate_stats(
     # Run async processing
     asyncio.run(
         process_matches_async(
-            all_matches, player_id_to_player, ks, output_path, async_db_url
+            all_matches, player_id_to_player, ks, output_path, async_db_url, override
         )
     )
 
