@@ -1,7 +1,7 @@
 from urllib.request import urlopen
 import pytest
 
-from tennis_scrapper.scrap.tournaments import scrap_tournaments
+from tennis_scrapper.scrap.tournaments import scrap_tournaments_from_html
 from tennis_scrapper.db.models import Gender, Surface
 
 
@@ -12,7 +12,7 @@ def url() -> str:
 
 def test_scrap_tournaments_ok(url: str):
     html = urlopen(url).read()
-    tournaments = scrap_tournaments(html, Gender.MEN)
+    tournaments = scrap_tournaments_from_html(html, Gender.MEN)
     assert (
         len(tournaments) == 298
     ), f"Expected 298 tournaments to be scraped but got {len(tournaments)}"

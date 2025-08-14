@@ -247,8 +247,12 @@ async def compute_one_match_stat(
     output_dir: Path,
     override: bool,
 ) -> Dict:
-    if not override and (output_dir / f"{match.match_id}.json").exists():
-        logger.info(f"Skipping match {match.match_id}, already processed.")
+
+    def get_save_path(match: Match) -> Path:
+        return output_dir / "jsons" / match.match_id[:3] / f"{match.match_id}.json"
+
+    if not override and get_save_path(match).exists():
+        # logger.info(f"Skipping match {match.match_id}, already processed.")
         return {}
 
     async with AsyncSession(async_engine) as db_session:
@@ -333,9 +337,7 @@ async def compute_one_match_stat(
         data["date"] = str(data["date"])
 
         # Save to file
-        output_file = (
-            output_dir / "jsons" / match.match_id[:3] / f"{match.match_id}.json"
-        )
+        output_file = get_save_path(match)
         output_file.parent.mkdir(parents=True, exist_ok=True)
         with open(output_file, "w") as f:
             json.dump(data, f)
@@ -382,23 +384,27 @@ async def process_matches_async(
     output_path: Path,
     async_db_url: str,
     override: bool,
-):
+) -> list[dict]:
     """Process matches asynchronously."""
     # Create async engine and session
     async_engine = create_async_engine(async_db_url, echo=False)
 
+    stats = []
     for match in tqdm(matches, desc="Processing matches", unit="match"):
-        await compute_one_match_stat(
-            match=match,
-            async_engine=async_engine,
-            player_id_to_player=player_id_to_player,
-            ks=ks,
-            output_dir=output_path,
-            override=override,
+        stats.append(
+            await compute_one_match_stat(
+                match=match,
+                async_engine=async_engine,
+                player_id_to_player=player_id_to_player,
+                ks=ks,
+                output_dir=output_path,
+                override=override,
+            )
         )
 
     await async_engine.dispose()
 
+    return stats
 
 @app.command(help="Generate comprehensive tennis match statistics.")
 def generate_stats(

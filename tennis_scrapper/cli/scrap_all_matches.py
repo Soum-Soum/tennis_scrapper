@@ -6,13 +6,13 @@ import aiohttp
 import typer
 from bs4 import BeautifulSoup
 from loguru import logger
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 from tqdm.asyncio import tqdm
 
-from tennis_scrapper.scrap.matches import get_row_id_to_tournament
-from tennis_scrapper.scrap.matches import get_row_pairs
-from tennis_scrapper.scrap.matches import pair_to_match
-from tennis_scrapper.scrap.players import scrap_player
+from scrap.matches import get_row_id_to_tournament
+from scrap.matches import get_row_pairs
+from scrap.matches import pair_to_match
+from scrap.players import scrap_player_from_html
 from db.db_utils import engine, clear_table
 from db.models import Gender, Match, Player
 from utils.http_utils import async_get_with_retry
@@ -26,7 +26,9 @@ async def get_player_from_url_extension(
     logger.info(f"Scraping player data from {player_url_extension}")
     url = f"https://www.tennisexplorer.com/{player_url_extension}/"
     html = await async_get_with_retry(client_session, url)
-    player = scrap_player(html=html, player_detail_url_extension=player_url_extension)
+    player = scrap_player_from_html(
+        html=html, player_detail_url_extension=player_url_extension
+    )
     return player
 
 
@@ -81,9 +83,8 @@ async def scrape_matches_from_url(
 def _get_date_interval(from_year: int, to_year: int):
     """Détermine la période à scraper, en tenant compte de la DB."""
     with Session(engine) as db_session:
-        max_date_in_db = db_session.exec(
-            select(Match.date).order_by(Match.date.desc())
-        ).first()
+        max_date_in_db = db_session.exec(select(func.max(Match.date))).one()
+        logger.info(f"Max date in DB: {max_date_in_db}")
 
     extensions = ["atp-single", "wta-single"]
 
@@ -101,7 +102,7 @@ async def _scrape_matches(
     """Lance l'ensemble des tâches de scraping pour chaque date et extension."""
     semaphore = asyncio.Semaphore(10)
     url_template = "https://www.tennisexplorer.com/results/?type={extension}&year={year}&month={month}&day={day}"
-    day_diff = (end_date - start_date).days + 1  # +1 pour inclure le end_date
+    day_diff = (end_date - start_date).days + 1
 
     async def _scrape_day(date: datetime.date, extension: str):
         async with semaphore:
@@ -117,11 +118,12 @@ async def _scrape_matches(
                 except Exception as e:
                     logger.error(f"Error scraping {date} ({extension}) : {url} : {e}")
 
-    tasks = [
-        _scrape_day(start_date + datetime.timedelta(days=day_offset), extension)
-        for extension in extensions
-        for day_offset in range(day_diff)
-    ]
+    tasks = []
+    for day_offset in range(day_diff):
+        for extension in extensions:
+            tasks.append(
+                _scrape_day(start_date + datetime.timedelta(days=day_offset), extension)
+            )
 
     await tqdm.gather(*tasks, desc="Scraping matches for each day", unit="day")
 

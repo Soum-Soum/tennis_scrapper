@@ -3,7 +3,7 @@ from urllib.request import urlopen
 import pytest
 
 from tennis_scrapper.db.models import Gender
-from tennis_scrapper.scrap.players import scrap_player
+from tennis_scrapper.scrap.players import scrap_player_from_html
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def url() -> str:
 
 def test_scrap_player_ok(url: str, url_extension: str):
     html = urlopen(url).read()
-    player = scrap_player(html, url_extension)
+    player = scrap_player_from_html(html, url_extension)
 
     assert player.name == "Sinner Jannik"
     assert player.country == "Italy"

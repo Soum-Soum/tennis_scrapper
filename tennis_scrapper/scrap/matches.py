@@ -4,7 +4,7 @@ from loguru import logger
 
 from typing import List, Optional
 
-from tennis_scrapper.db.models import Gender, Match, Tournament
+from db.models import Gender, Match, Tournament
 
 from sqlmodel import Session, col, select
 
@@ -128,6 +128,28 @@ def get_row_pairs(trs: list) -> List[tuple]:
     return row_pairs
 
 
+def scrap_odds(row1) -> tuple[Optional[float], Optional[float]]:
+    res = row1.find_all("td", class_="course")
+    if len(res) == 2:
+        player_1_odds_str = res[0].get_text(strip=True).strip()
+        player_2_odds_str = res[1].get_text(strip=True).strip()
+    elif len(res) == 1:
+        player_1_odds_str = (
+            row1.find("td", class_="coursew").get_text(strip=True).strip()
+        )
+        player_2_odds_str = (
+            row1.find("td", class_="course").get_text(strip=True).strip()
+        )
+
+    else:
+        raise ValueError(f"Unexpected number of odds columns: {len(res)}")
+
+    player_1_odds = float(player_1_odds_str) if player_1_odds_str else None
+    player_2_odds = float(player_2_odds_str) if player_2_odds_str else None
+
+    return player_1_odds, player_2_odds
+
+
 def pair_to_match(
     tournament: Tournament,
     row1,
@@ -142,10 +164,12 @@ def pair_to_match(
         logger.warning(f"Unable to find player URLs -> skipping row")
         return None
 
-    player_1_odds_str = row1.find("td", class_="coursew").get_text(strip=True).strip()
-    player_2_odds_str = row1.find("td", class_="course").get_text(strip=True).strip()
-    player_1_odds = float(player_1_odds_str) if player_1_odds_str else None
-    player_2_odds = float(player_2_odds_str) if player_2_odds_str else None
+    # player_1_odds_str = row1.find("td", class_="coursew").get_text(strip=True).strip()
+    # player_2_odds_str = row1.find("td", class_="course").get_text(strip=True).strip()
+    # player_1_odds = float(player_1_odds_str) if player_1_odds_str else None
+    # player_2_odds = float(player_2_odds_str) if player_2_odds_str else None
+
+    player_1_odds, player_2_odds = scrap_odds(row1)
 
     score = parse_score(row1, row2)
 

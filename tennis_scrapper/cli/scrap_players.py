@@ -10,7 +10,7 @@ from tqdm.asyncio import tqdm
 from conf.config import settings
 from db.db_utils import engine, clear_table
 from db.models import Player, Match
-from tennis_scrapper.scrap.players import scrap_player
+from scrap.players import scrap_player_from_html
 from utils.http_utils import async_get_with_retry
 
 
@@ -32,7 +32,7 @@ async def fetch_player(
                 f"Failed to fetch player data for {player_detail_url_extension}: {e}"
             )
             return
-        player = scrap_player(html, player_detail_url_extension)
+        player = scrap_player_from_html(html, player_detail_url_extension)
         with db_session:
             db_session.add(player)
             db_session.commit()

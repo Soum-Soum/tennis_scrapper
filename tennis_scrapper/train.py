@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from catboost import CatBoostClassifier
+import joblib
 from loguru import logger
 import pandas as pd
 import numpy as np
@@ -243,6 +244,7 @@ if __name__ == "__main__":
             X_train, X_val, cols_data.numerical
         )
 
+        joblib.dump(scaler, data_save_path / "scaler.pkl")
         X_train_scaled.to_parquet(data_save_path / "X_train_scaled.parquet")
         X_val_scaled.to_parquet(data_save_path / "X_val_scaled.parquet")
         pd.DataFrame(y_train).to_parquet(data_save_path / "y_train.parquet")

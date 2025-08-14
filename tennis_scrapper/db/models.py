@@ -89,37 +89,40 @@ class Player(HashedIDModel, table=True):
         return int(self.player_id, 16)
 
 
-class Match(HashedIDModel, table=True):
-    match_id: str = Field(default=None, primary_key=True)
+class BaseMatch(HashedIDModel):
     tournament_id: str = Field(foreign_key="tournament.tournament_id", nullable=False)
     date: datetime.date = Field(nullable=False, index=True)
     players_gender: Gender = Field(nullable=False)
-    round: str = Field(
-        nullable=True,
-        default="UNKNOWN",
-        description="Round of the match (e.g. 'Final', 'Semi-Final', 'Quarter-Final')",
-    )
     surface: Surface = Field(nullable=False, description="Match surface type")
-    player_1_id: str = Field(
-        foreign_key="player.player_id", nullable=True, default=None, index=True
-    )
+    player_1_id: str = Field(foreign_key="player.player_id", nullable=False)
+    player_2_id: str = Field(foreign_key="player.player_id", nullable=False)
     player_1_url_extension: str = Field(
         nullable=False, description="URL extension for player 1 details"
     )
-    player_2_id: str = Field(
-        foreign_key="player.player_id", nullable=True, default=None, index=True
-    )
     player_2_url_extension: str = Field(
         nullable=False, description="URL extension for player 2 details"
-    )
-    score: str = Field(
-        nullable=False, description="Match score in format '6-3 6-4' or '6-3 3-6 6-4'"
     )
     player_1_odds: float = Field(
         nullable=True, default=None, description="Odds for player 1 to win the match"
     )
     player_2_odds: float = Field(
         nullable=True, default=None, description="Odds for player 2 to win the match"
+    )
+
+
+class IncomingMatch(BaseMatch):
+    pass
+
+
+class Match(BaseMatch, table=True):
+    match_id: str = Field(default=None, primary_key=True)
+    round: str = Field(
+        nullable=True,
+        default="UNKNOWN",
+        description="Round of the match (e.g. 'Final', 'Semi-Final', 'Quarter-Final')",
+    )
+    score: str = Field(
+        nullable=False, description="Match score in format '6-3 6-4' or '6-3 3-6 6-4'"
     )
     player_1_elo: float = Field(
         default=None,

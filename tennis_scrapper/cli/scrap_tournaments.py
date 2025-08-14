@@ -8,7 +8,7 @@ from loguru import logger
 from conf.config import settings
 from db.db_utils import insert_if_not_exists
 from db.models import Gender, Tournament
-from tennis_scrapper.scrap.tournaments import scrap_tournaments, get_default_tournament
+from scrap.tournaments import scrap_tournaments_from_html, get_default_tournament
 
 
 async def fetch_and_store_tournaments(
@@ -20,7 +20,7 @@ async def fetch_and_store_tournaments(
             logger.error(f"Error while downloading {url_year}")
             return 0
         html = await resp.text()
-        tournaments = scrap_tournaments(html, players_gender)
+        tournaments = scrap_tournaments_from_html(html, players_gender)
         if not tournaments:
             logger.info(f"No tournaments found for {url_year}")
             return 0

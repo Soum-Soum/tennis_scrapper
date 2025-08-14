@@ -1,5 +1,5 @@
-from tennis_scrapper.db.models import Gender, Player
-from tennis_scrapper.scrap.utils import find_div_by_text
+from db.models import Gender, Player
+from scrap.utils import find_div_by_text
 
 
 from bs4 import BeautifulSoup
@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 import datetime
 
 
-def scrap_player(html: str, player_detail_url_extension: str) -> Player:
+def scrap_player_from_html(html: str, player_detail_url_extension: str) -> Player:
 
     soup = BeautifulSoup(html, "lxml")
     table = soup.find("table", "plDetail")

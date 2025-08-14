@@ -110,8 +110,6 @@ def add_elo():
 
         elo_aggregator = EloAggregator(players=players)
 
-        player_id_to_elo_ranking = {player.player_id: INITIAL_ELO for player in players}
-
         for days_diff in tqdm(
             range(0, days_diff, 7),
             desc=f"Computing ELOs between {min_date} and {max_date}",

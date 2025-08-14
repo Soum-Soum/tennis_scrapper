@@ -9,8 +9,8 @@ from sqlmodel import Session, text, select, func
 from tqdm.asyncio import tqdm
 
 from db.db_utils import clear_table, engine, insert_if_not_exists
-from db.models import Ranking, Match
-from tennis_scrapper.scrap.rankings import scarp_dates
+from db.models import Gender, Ranking, Match
+from scrap.rankings import scarp_dates
 from utils.http_utils import async_get_with_retry
 
 
@@ -62,18 +62,19 @@ async def scrap_one_date(
     return rankings
 
 
-async def run_scrap_ranking(start_year: int, end_year: int) -> None:
+async def run_scrap_ranking(
+    start_date: datetime.date, end_date: datetime.date, extension: str
+) -> None:
     async with aiohttp.ClientSession() as session:
         tasks = []
-        for year in range(start_year, end_year + 1):
-            for extension in ["atp-men", "wta-women"]:
-                tasks.append(
-                    scarp_dates(
-                        session,
-                        extension=extension,
-                        year=year,
-                    )
+        for year in range(start_date.year, end_date.year + 1):
+            tasks.append(
+                scarp_dates(
+                    session,
+                    extension=extension,
+                    year=year,
                 )
+            )
         dates = await tqdm.gather(*tasks, desc="Scraping dates for rankings")
         dates = dict(dates)
 
@@ -81,6 +82,14 @@ async def run_scrap_ranking(start_year: int, end_year: int) -> None:
         for url, dates in tqdm(
             dates.items(), desc="Scraping rankings for dates", total=len(dates)
         ):
+            dates = list(
+                filter(
+                    lambda x: start_date
+                    <= datetime.datetime.strptime(x, "%Y-%m-%d").date()
+                    <= end_date,
+                    dates,
+                )
+            )
             for date in tqdm(dates, desc=f"Scraping rankings for {url}", leave=False):
                 await scrape_one_date_ranking(session, url, date)
 
@@ -107,22 +116,31 @@ app = typer.Typer()
     help="Scrape rankings from Tennis Explorer and store them in the database."
 )
 def scrap_ranking(
-    clear: bool = typer.Option(False, help="Clear existing rankings before scraping")
+    clear: bool = typer.Option(False, help="Clear existing rankings before scraping"),
 ):
 
-    with Session(engine) as session:
-        if clear:
-            clear_table(Ranking)
-            logger.info("Cleared existing rankings table.")
+    for gender, extension, circuit in [
+        (Gender.MEN, "atp-men", "ATP"),
+        (Gender.WOMAN, "wta-women", "WTA"),
+    ]:
+        with Session(engine) as session:
+            if clear:
+                clear_table(Ranking)
+                logger.info("Cleared existing rankings table.")
 
-        min_date, max_date = session.exec(
-            select(
-                func.min(Match.date).label("date_min"),
-                func.max(Match.date).label("date_max"),
-            )
-        ).first()
+            min_date, max_date = session.exec(
+                select(
+                    func.min(Match.date).label("date_min"),
+                    func.max(Match.date).label("date_max"),
+                ).where(Match.players_gender == gender)
+            ).first()
 
-    start_year = min_date.year
-    end_year = max_date.year
-    asyncio.run(run_scrap_ranking(start_year, end_year))
+            last_ranking_date = session.exec(
+                select(func.max(Ranking.date)).where(Ranking.circuit == circuit)
+            ).first()
+            if last_ranking_date is not None:
+                min_date = max(min_date, last_ranking_date)
+
+            asyncio.run(run_scrap_ranking(min_date, max_date, extension))
+
     add_player_id_to_ranking()

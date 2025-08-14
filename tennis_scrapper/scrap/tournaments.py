@@ -1,5 +1,5 @@
 import datetime
-from tennis_scrapper.db.models import Gender, Surface, Tournament
+from db.models import Gender, Surface, Tournament
 
 
 from bs4 import BeautifulSoup
@@ -48,7 +48,7 @@ def parse_prize(prize_str: str) -> float:
         return 0.0
 
 
-def scrap_tournaments(html: str, players_gender: Gender) -> List[Tournament]:
+def scrap_tournaments_from_html(html: str, players_gender: Gender) -> List[Tournament]:
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", id="tournamentList")
     tournaments: List[Tournament] = []

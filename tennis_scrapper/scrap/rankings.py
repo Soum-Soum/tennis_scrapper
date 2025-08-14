@@ -1,4 +1,4 @@
-from tennis_scrapper.utils.http_utils import async_get_with_retry
+from utils.http_utils import async_get_with_retry
 
 
 import aiohttp

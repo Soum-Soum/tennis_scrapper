@@ -7,6 +7,33 @@ from db.db_utils import engine
 from db.models import Match, Ranking, Gender
 
 
+def add_atp_points_to_matches(
+    matches: list[Match], rankings: list[Ranking]
+) -> list[Match]:
+
+    player_id_to_ranking = {r.player_id: r for r in rankings}
+
+    matches_with_atp = []
+    for match in matches:
+        player_1_ranking = player_id_to_ranking.get(match.player_1_id, None)
+        player_2_ranking = player_id_to_ranking.get(match.player_2_id, None)
+
+        updates = {}
+        if player_1_ranking is not None:
+            updates["atp_ranking_player_1"] = int(player_1_ranking.rank)
+            updates["atp_points_player_1"] = int(player_1_ranking.points)
+
+        if player_2_ranking is not None:
+            updates["atp_ranking_player_2"] = int(player_2_ranking.rank)
+            updates["atp_points_player_2"] = int(player_2_ranking.points)
+
+        if updates:
+            match = match.model_copy(update=updates)
+        matches_with_atp.append(match)
+
+    return matches_with_atp
+
+
 def add_atp():
     with Session(engine) as session:
 
@@ -37,20 +64,13 @@ def add_atp():
                     )
                 ).all()
 
-                rankings = session.exec(select(Ranking).where(Ranking.date == end_date))
-                player_id_to_ranking = {r.player_id: r for r in rankings}
+                rankings = session.exec(
+                    select(Ranking)
+                    .where(Ranking.date == end_date)
+                    .where(Ranking.circuit == circuit)
+                ).all()
 
-                for match in matches:
-                    player_1_ranking = player_id_to_ranking.get(match.player_1_id, None)
-                    player_2_ranking = player_id_to_ranking.get(match.player_2_id, None)
-
-                    if player_1_ranking is not None:
-                        match.atp_ranking_player_1 = player_1_ranking.rank
-                        match.atp_points_player_1 = player_1_ranking.points
-
-                    if player_2_ranking is not None:
-                        match.atp_ranking_player_2 = player_2_ranking.rank
-                        match.atp_points_player_2 = player_2_ranking.points
+                matches = add_atp_points_to_matches(matches, rankings)
 
                 session.add_all(matches)
                 session.commit()
