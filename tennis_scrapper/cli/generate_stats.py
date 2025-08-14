@@ -327,13 +327,16 @@ async def compute_one_match_stat(
             **h2h_stats,
         }
 
-        data = compute_diff_stats(data)
+        # data = compute_diff_stats(data)
 
         # Convert date to string for JSON serialization
         data["date"] = str(data["date"])
 
         # Save to file
-        output_file = output_dir / f"{match.match_id}.json"
+        output_file = (
+            output_dir / "jsons" / match.match_id[:3] / f"{match.match_id}.json"
+        )
+        output_file.parent.mkdir(parents=True, exist_ok=True)
         with open(output_file, "w") as f:
             json.dump(data, f)
         logger.info(f"Processed match {match.match_id} and saved to {output_file}")

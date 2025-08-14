@@ -6,80 +6,18 @@ import aiohttp
 import typer
 from bs4 import BeautifulSoup
 from loguru import logger
-from sqlmodel import Session, select, col
+from sqlmodel import Session, select
 from tqdm.asyncio import tqdm
 
-from cli.scrap_players import extract_player
+from tennis_scrapper.scrap.matches import get_row_id_to_tournament
+from tennis_scrapper.scrap.matches import get_row_pairs
+from tennis_scrapper.scrap.matches import pair_to_match
+from tennis_scrapper.scrap.players import scrap_player
 from db.db_utils import engine, clear_table
-from db.models import Tournament, Gender, Match, Player
+from db.models import Gender, Match, Player
 from utils.http_utils import async_get_with_retry
 
 app = typer.Typer()
-
-
-def parse_score(tr1, tr2) -> str:
-    def remove_sup(s: str) -> str:
-        if "<sup>" not in s:
-            return s
-
-        return s[: s.index("<sup>")].strip()
-
-    def extract_score(tr) -> List[str]:
-        tds = tr.find_all("td", class_="score")
-        scores = list(
-            filter(
-                lambda s: len(s.strip()) > 0,
-                map(lambda s: remove_sup(s.decode_contents()), tds),
-            )
-        )
-        return scores
-
-    scores1 = extract_score(tr1)
-    scores2 = extract_score(tr2)
-
-    if len(scores1) != len(scores2):
-        logger.warning(
-            f"Mismatch in score lengths: {scores1} vs {scores2}, {tr1}, {tr2}"
-        )
-        min_len = min(len(scores1), len(scores2))
-        scores1 = scores1[:min_len]
-        scores2 = scores2[:min_len]
-
-    scores_str = " ".join(f"{s1}-{s2}" for s1, s2 in zip(scores1, scores2))
-    return scores_str.strip()
-
-
-def get_default_tournament(
-    year: int,
-    players_gender: Gender,
-    db_session: Session,
-) -> Tournament:
-    return db_session.exec(
-        select(Tournament).where(
-            col(Tournament.name).contains("Default"),
-            Tournament.year == year,
-            Tournament.players_gender == players_gender,
-        )
-    ).first()
-
-
-def get_tournament(
-    url_extension: Optional[str],
-    year: int,
-    players_gender: Gender,
-    db_session: Session,
-) -> Tournament:
-    tournament = db_session.exec(
-        select(Tournament).where(
-            Tournament.url_extension == url_extension,
-            Tournament.year == year,
-            Tournament.players_gender == players_gender,
-        )
-    ).first()
-    if tournament is not None:
-        return tournament
-    else:
-        return get_default_tournament(year, players_gender, db_session)
 
 
 async def get_player_from_url_extension(
@@ -88,8 +26,41 @@ async def get_player_from_url_extension(
     logger.info(f"Scraping player data from {player_url_extension}")
     url = f"https://www.tennisexplorer.com/{player_url_extension}/"
     html = await async_get_with_retry(client_session, url)
-    player = extract_player(html=html, player_detail_url_extension=player_url_extension)
+    player = scrap_player(html=html, player_detail_url_extension=player_url_extension)
     return player
+
+
+def scrap_matches(
+    html: str, date: datetime.date, db_session: Session, url: str
+) -> List[Match]:
+    soup = BeautifulSoup(html, "lxml")
+    table = soup.find("table", class_="result")
+
+    trs = table.find_all("tr")
+    players_gender = Gender.MEN if "atp-single" in url else Gender.WOMAN
+
+    row_id_to_tournament = get_row_id_to_tournament(
+        trs, players_gender, date, db_session
+    )
+
+    row_pairs = get_row_pairs(trs)
+
+    matches = set()
+
+    for row1, (row_two_id, row2) in row_pairs:
+        tournament = row_id_to_tournament[
+            max(filter(lambda x: x <= row_two_id, row_id_to_tournament.keys()))
+        ]
+        match = pair_to_match(
+            tournament=tournament,
+            row1=row1,
+            row2=row2,
+            date=date,
+        )
+        if match:
+            matches.add(match)
+
+    return list(matches)
 
 
 async def scrape_matches_from_url(
@@ -101,101 +72,9 @@ async def scrape_matches_from_url(
         html: Optional[str] = await async_get_with_retry(
             session, url, headers={"Accept": "text/html"}
         )
-        soup = BeautifulSoup(html, "lxml")
-        table = soup.find("table", class_="result")
 
-        current_tournament = None
-
-        trs = table.find_all("tr")
-        heads = list(
-            filter(
-                lambda x: x[1].has_attr("class") and "head" in x[1]["class"],
-                enumerate(trs),
-            )
-        )
-
-        players_gender = Gender.MEN if "atp-single" in url else Gender.WOMAN
-        row_id_to_tournament = {}
-        for row_id, head_row in heads:
-            tournament_url_extension_a = head_row.find("td", class_="t-name").find("a")
-            if not tournament_url_extension_a:
-                current_tournament = get_default_tournament(
-                    year=date.year, players_gender=players_gender, db_session=db_session
-                )
-            else:
-                tournament_url_extension = tournament_url_extension_a["href"]
-                current_tournament = get_tournament(
-                    url_extension=tournament_url_extension,
-                    year=date.year,
-                    players_gender=players_gender,
-                    db_session=db_session,
-                )
-
-            row_id_to_tournament[row_id] = current_tournament
-
-        row_one = list(
-            filter(
-                lambda tr: tr.has_attr("id")
-                and tr["id"].startswith("r")
-                and not tr["id"].endswith("b"),
-                trs,
-            )
-        )
-        row_two_and_id = list(
-            filter(
-                lambda x: x[1].has_attr("id")
-                and x[1]["id"].startswith("r")
-                and x[1]["id"].endswith("b"),
-                enumerate(trs),
-            )
-        )
-
-        row_pairs = list(zip(row_one, row_two_and_id))
-
-        matches = set()
-
-        for row1, (row_two_id, row2) in row_pairs:
-            tournament = row_id_to_tournament[
-                max(filter(lambda x: x <= row_two_id, row_id_to_tournament.keys()))
-            ]
-
-            try:
-                player_1_url_extension = row1.find("td", class_="t-name").find("a")[
-                    "href"
-                ]
-                player_2_url_extension = row2.find("td", class_="t-name").find("a")[
-                    "href"
-                ]
-            except TypeError:
-                logger.warning(f"Unable to find player URLs at {url} -> skipping row")
-                continue
-
-            player_1_odds_str = (
-                row1.find("td", class_="coursew").get_text(strip=True).strip()
-            )
-            player_2_odds_str = (
-                row1.find("td", class_="course").get_text(strip=True).strip()
-            )
-            player_1_odds = float(player_1_odds_str) if player_1_odds_str else None
-            player_2_odds = float(player_2_odds_str) if player_2_odds_str else None
-
-            score = parse_score(row1, row2)
-
-            matches.add(
-                Match(
-                    tournament_id=tournament.tournament_id,
-                    date=date,
-                    players_gender=tournament.players_gender,
-                    surface=tournament.surface,
-                    player_1_url_extension=player_1_url_extension,
-                    player_2_url_extension=player_2_url_extension,
-                    score=score,
-                    player_1_odds=player_1_odds,
-                    player_2_odds=player_2_odds,
-                )
-            )
-
-        db_session.add_all(list(matches))
+        matches = scrap_matches(html=html, date=date, db_session=db_session, url=url)
+        db_session.add_all(matches)
         db_session.commit()
 
 
