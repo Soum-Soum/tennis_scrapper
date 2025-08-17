@@ -27,6 +27,18 @@ class Gender(StrEnum):
             return cls.WOMAN
         raise ValueError(f"Invalid gender value: {value}")
 
+    @property
+    def player_url_extension(self) -> str:
+        return "atp-single" if self == Gender.MEN else "wta-single"
+
+    @property
+    def tournament_url_extension(self) -> str:
+        return "atp-men" if self == Gender.MEN else "wta-women"
+
+    @property
+    def circuit(self) -> str:
+        return "ATP" if self == Gender.MEN else "WTA"
+
 
 class HashedIDModel(SQLModel):
     @staticmethod

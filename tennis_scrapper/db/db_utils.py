@@ -80,22 +80,23 @@ def get_conflict_columns(engine, table):
     )
 
 
-def insert_if_not_exists(table: Type[T], instances: list[T]) -> None:
+def insert_if_not_exists(
+    db_session: Session, table: Type[T], instances: list[T]
+) -> None:
     if len(instances) == 0:
         return
 
     conflict_columns = get_conflict_columns(engine, table)
 
     def insert_one_batch(batch: list[T]) -> None:
-        with Session(engine) as db_session:
-            values = [instance.model_dump() for instance in batch]
-            stmt = (
-                insert(table)
-                .values(values)
-                .on_conflict_do_nothing(index_elements=conflict_columns)
-            )
-            db_session.exec(stmt)
-            db_session.commit()
+        values = [instance.model_dump() for instance in batch]
+        stmt = (
+            insert(table)
+            .values(values)
+            .on_conflict_do_nothing(index_elements=conflict_columns)
+        )
+        db_session.exec(stmt)
+        db_session.commit()
 
     batch_size = 20_000
     if len(instances) <= batch_size:

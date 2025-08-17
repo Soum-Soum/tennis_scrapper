@@ -1,4 +1,6 @@
 import datetime
+
+import aiohttp
 from db.models import Gender, Surface, Tournament
 
 
@@ -6,7 +8,10 @@ from bs4 import BeautifulSoup
 from loguru import logger
 
 
-from typing import Any, List
+from typing import Any, List, Coroutine
+
+from scrap.urls import get_one_year_tournaments_url
+from utils.http_utils import async_get_with_retry
 
 
 def parse_surface(td: Any) -> Surface:
@@ -48,7 +53,7 @@ def parse_prize(prize_str: str) -> float:
         return 0.0
 
 
-def scrap_tournaments_from_html(html: str, players_gender: Gender) -> List[Tournament]:
+def tournaments_from_html(html: str, players_gender: Gender) -> List[Tournament]:
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table", id="tournamentList")
     tournaments: List[Tournament] = []
@@ -93,3 +98,33 @@ def get_default_tournament(year: int, players_gender: Gender) -> Tournament:
         players_gender=players_gender,
         url_extension="",
     )
+
+
+async def scrap_tournaments(
+    html_session: aiohttp.ClientSession, gender: Gender, year: int
+) -> List[Tournament]:
+    url = get_one_year_tournaments_url(gender=gender, year=year)
+    html = await async_get_with_retry(
+        html_session, url, headers={"Accept": "text/html"}
+    )
+    tournaments = tournaments_from_html(html, gender)
+    if not tournaments:
+        logger.info(f"No tournaments found for {url}")
+        return 0
+    tournaments.append(get_default_tournament(year, gender))
+    return tournaments
+
+
+def get_tournaments_scrapping_tasks(
+    html_session: aiohttp.ClientSession,
+    from_date: datetime.date,
+    to_date: datetime.date,
+) -> List[Coroutine[Any, Any, List[Tournament]]]:
+    years_diff = (to_date.year - from_date.year) + 1
+    tasks = []
+    for gender in Gender:
+        for year in range(from_date.year, from_date.year + years_diff):
+            tasks.append(
+                scrap_tournaments(html_session=html_session, gender=gender, year=year)
+            )
+    return tasks

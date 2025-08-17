@@ -9,12 +9,13 @@ from loguru import logger
 from sqlmodel import Session, func, select
 from tqdm.asyncio import tqdm
 
-from scrap.matches import get_row_id_to_tournament
+from scrap.matches import MatchData, get_row_id_to_tournament_url_ext
 from scrap.matches import get_row_pairs
 from scrap.matches import pair_to_match
-from scrap.players import scrap_player_from_html
+from scrap.players import player_from_html
 from db.db_utils import engine, clear_table
 from db.models import Gender, Match, Player
+from tennis_scrapper.scrap.urls import get_match_list_page_url
 from utils.http_utils import async_get_with_retry
 
 app = typer.Typer()
@@ -26,43 +27,10 @@ async def get_player_from_url_extension(
     logger.info(f"Scraping player data from {player_url_extension}")
     url = f"https://www.tennisexplorer.com/{player_url_extension}/"
     html = await async_get_with_retry(client_session, url)
-    player = scrap_player_from_html(
+    player = player_from_html(
         html=html, player_detail_url_extension=player_url_extension
     )
     return player
-
-
-def scrap_matches(
-    html: str, date: datetime.date, db_session: Session, url: str
-) -> List[Match]:
-    soup = BeautifulSoup(html, "lxml")
-    table = soup.find("table", class_="result")
-
-    trs = table.find_all("tr")
-    players_gender = Gender.MEN if "atp-single" in url else Gender.WOMAN
-
-    row_id_to_tournament = get_row_id_to_tournament(
-        trs, players_gender, date, db_session
-    )
-
-    row_pairs = get_row_pairs(trs)
-
-    matches = set()
-
-    for row1, (row_two_id, row2) in row_pairs:
-        tournament = row_id_to_tournament[
-            max(filter(lambda x: x <= row_two_id, row_id_to_tournament.keys()))
-        ]
-        match = pair_to_match(
-            tournament=tournament,
-            row1=row1,
-            row2=row2,
-            date=date,
-        )
-        if match:
-            matches.add(match)
-
-    return list(matches)
 
 
 async def scrape_matches_from_url(
@@ -75,7 +43,9 @@ async def scrape_matches_from_url(
             session, url, headers={"Accept": "text/html"}
         )
 
-        matches = scrap_matches(html=html, date=date, db_session=db_session, url=url)
+        matches = match_data_set_from_url(
+            html=html, date=date, db_session=db_session, url=url
+        )
         db_session.add_all(matches)
         db_session.commit()
 
