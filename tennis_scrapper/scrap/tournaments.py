@@ -1,6 +1,7 @@
 import datetime
 
 import aiohttp
+from requests import Session
 from db.models import Gender, Surface, Tournament
 
 
@@ -11,6 +12,7 @@ from loguru import logger
 from typing import Any, List, Coroutine
 
 from scrap.urls import get_one_year_tournaments_url
+from db.db_utils import insert_if_not_exists
 from utils.http_utils import async_get_with_retry
 
 
@@ -101,8 +103,8 @@ def get_default_tournament(year: int, players_gender: Gender) -> Tournament:
 
 
 async def scrap_tournaments(
-    html_session: aiohttp.ClientSession, gender: Gender, year: int
-) -> List[Tournament]:
+    db_session: Session, html_session: aiohttp.ClientSession, gender: Gender, year: int
+) -> None:
     url = get_one_year_tournaments_url(gender=gender, year=year)
     html = await async_get_with_retry(
         html_session, url, headers={"Accept": "text/html"}
@@ -111,20 +113,22 @@ async def scrap_tournaments(
     if not tournaments:
         logger.info(f"No tournaments found for {url}")
         return 0
+    else:
+        logger.success(f"Found {len(tournaments)} tournaments for {url}")
     tournaments.append(get_default_tournament(year, gender))
-    return tournaments
+
+    insert_if_not_exists(db_session=db_session, table=Tournament, instances=tournaments)
 
 
 def get_tournaments_scrapping_tasks(
+    db_session: Session,
     html_session: aiohttp.ClientSession,
     from_date: datetime.date,
     to_date: datetime.date,
-) -> List[Coroutine[Any, Any, List[Tournament]]]:
+) -> List[Coroutine[Any, Any, None]]:
     years_diff = (to_date.year - from_date.year) + 1
     tasks = []
     for gender in Gender:
         for year in range(from_date.year, from_date.year + years_diff):
-            tasks.append(
-                scrap_tournaments(html_session=html_session, gender=gender, year=year)
-            )
+            tasks.append(scrap_tournaments(db_session, html_session, gender, year))
     return tasks

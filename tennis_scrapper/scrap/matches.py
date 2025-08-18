@@ -1,3 +1,4 @@
+from collections import defaultdict
 import datetime
 import aiohttp
 from bs4 import BeautifulSoup
@@ -6,23 +7,34 @@ from loguru import logger
 
 from typing import Any, Coroutine, List, Optional
 
-from pydantic import BaseModel
+from sqlmodel import Session
 
-from db.models import Gender
-
-
-from tennis_scrapper.scrap.urls import get_match_list_page_url
-from tennis_scrapper.utils.http_utils import async_get_with_retry
+from db.models import Gender, Match
 
 
-class MatchData(BaseModel):
-    date: datetime.date
-    tournament_url_extension: str
-    player_1_url_extension: str
-    player_2_url_extension: str
-    score: str
-    player_1_odds: float
-    player_2_odds: float
+from scrap.urls import get_match_list_page_url
+from utils.http_utils import async_get_with_retry
+
+
+# class MatchData(BaseModel):
+#     date: datetime.date
+#     tournament_url_extension: str
+#     player_1_url_extension: str
+#     player_2_url_extension: str
+#     score: str
+#     player_1_odds: Optional[float]
+#     player_2_odds: Optional[float]
+
+#     def __hash__(self):
+#         return hash(
+#             (
+#                 self.date,
+#                 self.tournament_url_extension,
+#                 self.player_1_url_extension,
+#                 self.player_2_url_extension,
+#                 self.score,
+#             )
+#         )
 
 
 def parse_score(tr1, tr2) -> str:
@@ -57,41 +69,8 @@ def parse_score(tr1, tr2) -> str:
     return scores_str.strip()
 
 
-# def get_default_tournament(
-#     year: int,
-#     players_gender: Gender,
-#     db_session: Session,
-# ) -> Tournament:
-#     return db_session.exec(
-#         select(Tournament).where(
-#             col(Tournament.name).contains("Default"),
-#             Tournament.year == year,
-#             Tournament.players_gender == players_gender,
-#         )
-#     ).first()
-
-
-# def get_tournament(
-#     url_extension: Optional[str],
-#     year: int,
-#     players_gender: Gender,
-#     db_session: Session,
-# ) -> Tournament:
-#     tournament = db_session.exec(
-#         select(Tournament).where(
-#             Tournament.url_extension == url_extension,
-#             Tournament.year == year,
-#             Tournament.players_gender == players_gender,
-#         )
-#     ).first()
-#     if tournament is not None:
-#         return tournament
-#     else:
-#         return get_default_tournament(year, players_gender, db_session)
-
-
 def get_row_id_to_tournament_url_ext(
-    trs: list, players_gender: Gender, date: datetime.date
+    trs: list, gender: Gender, date: datetime.date
 ) -> dict[int, str]:
     heads = list(
         filter(
@@ -105,7 +84,7 @@ def get_row_id_to_tournament_url_ext(
         tournament_url_extension_a = head_row.find("td", class_="t-name").find("a")
 
         if not tournament_url_extension_a:
-            tournament_url_extension = f"DEFAULT-{players_gender}-{date.year}"
+            tournament_url_extension = f"DEFAULT-{gender}-{date.year}"
         else:
             tournament_url_extension = tournament_url_extension_a["href"]
 
@@ -164,7 +143,8 @@ def pair_to_match(
     row1: BeautifulSoup,
     row2: BeautifulSoup,
     date: datetime.date,
-) -> Optional[MatchData]:
+    gender: Gender,
+) -> Optional[Match]:
 
     try:
         player_1_url_extension = row1.find("td", class_="t-name").find("a")["href"]
@@ -177,7 +157,7 @@ def pair_to_match(
 
     score = parse_score(row1, row2)
 
-    return MatchData(
+    return Match(
         date=date,
         tournament_url_extension=tournament_url_extension,
         player_1_url_extension=player_1_url_extension,
@@ -185,19 +165,20 @@ def pair_to_match(
         score=score,
         player_1_odds=player_1_odds,
         player_2_odds=player_2_odds,
+        players_gender=gender,
     )
 
 
 def match_data_set_from_html(
     html: str, date: datetime.date, gender: Gender
-) -> set[MatchData]:
+) -> set[Match]:
     soup = BeautifulSoup(html, "lxml")
 
     table = soup.find("table", class_="result")
 
     trs = table.find_all("tr")
 
-    row_id_to_tournament = get_row_id_to_tournament_url_ext(
+    row_id_to_tournament_url = get_row_id_to_tournament_url_ext(
         trs=trs, gender=gender, date=date
     )
 
@@ -206,14 +187,15 @@ def match_data_set_from_html(
     matches = set()
 
     for row1, (row_two_id, row2) in row_pairs:
-        tournament = row_id_to_tournament[
-            max(filter(lambda x: x <= row_two_id, row_id_to_tournament.keys()))
+        tournament_url_extension = row_id_to_tournament_url[
+            max(filter(lambda x: x <= row_two_id, row_id_to_tournament_url.keys()))
         ]
         match_data = pair_to_match(
-            tournament=tournament,
+            tournament_url_extension=tournament_url_extension,
             row1=row1,
             row2=row2,
             date=date,
+            gender=gender,
         )
         if match_data:
             matches.add(match_data)
@@ -221,28 +203,75 @@ def match_data_set_from_html(
     return matches
 
 
+# def match_data_to_match(
+#     db_session: Session, html_session: aiohttp.ClientSession, match_data: MatchData
+# ) -> Match:
+#     tournament = get_tournament_by_url(match_data.tournament_url_extension)
+#     assert (
+#         tournament is not None
+#     ), f"Unable to find tournament for {match_data.tournament_url_extension}"
+
+#     player_1 = get_player(
+#         db_session=db_session,
+#         html_session=html_session,
+#         player_url_extension=match_data.player_1_url_extension,
+#     )
+#     player_2 = get_player(
+#         db_session=db_session,
+#         html_session=html_session,
+#         player_url_extension=match_data.player_2_url_extension,
+#     )
+
+#     return Match(
+#         player_1_id=player_1.player_id,
+#         player_2_id=player_2.player_id,
+#         tournament_id=tournament.tournament_id,
+#         surface=tournament.surface,
+#         **match_data.model_dump(),
+#     )
+
+
 async def scrap_match_data(
+    db_session: Session,
     html_session: aiohttp.ClientSession,
     gender: Gender,
     date: datetime.date,
-) -> set[MatchData]:
+) -> None:
     url = get_match_list_page_url(gender, date)
     html = await async_get_with_retry(
         html_session, url, headers={"Accept": "text/html"}
     )
-    return match_data_set_from_html(html, date, gender)
+    matches = match_data_set_from_html(html, date, gender)
+    
+
+    if len(set([m.match_id for m in matches])) != len(matches):
+        logger.error(f"Duplicate match IDs found @ {url}")
+        id_to_count = defaultdict(int)
+        for m in matches:
+            id_to_count[m.match_id] += 1
+        
+        matches = list(filter(lambda m: id_to_count[m.match_id] == 1, matches))
+        if not matches:
+            return
+
+    db_session.add_all(matches)
+    db_session.commit()
+    logger.success(
+        f"{len(matches)} matches inserted in DB for {gender.player_url_extension} on {date}"
+    )
 
 
 def get_match_scrapping_tasks(
+    db_session: Session,
     html_session: aiohttp.ClientSession,
     from_date: datetime.date,
     to_date: datetime.date,
-) -> list[Coroutine[Any, Any, set[MatchData]]]:
+) -> list[Coroutine[Any, Any, None]]:
     tasks = []
     day_diff = (to_date - from_date).days
     for day in range(day_diff + 1):
         for gender in Gender:
             date = from_date + datetime.timedelta(days=day)
-            tasks.append(scrap_match_data(html_session, gender, date))
+            tasks.append(scrap_match_data(db_session, html_session, gender, date))
 
     return tasks

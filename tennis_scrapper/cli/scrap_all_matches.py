@@ -4,33 +4,28 @@ from typing import Optional, List
 
 import aiohttp
 import typer
-from bs4 import BeautifulSoup
 from loguru import logger
 from sqlmodel import Session, func, select
 from tqdm.asyncio import tqdm
 
-from scrap.matches import MatchData, get_row_id_to_tournament_url_ext
-from scrap.matches import get_row_pairs
-from scrap.matches import pair_to_match
 from scrap.players import player_from_html
 from db.db_utils import engine, clear_table
-from db.models import Gender, Match, Player
-from tennis_scrapper.scrap.urls import get_match_list_page_url
+from db.models import Match, Player
 from utils.http_utils import async_get_with_retry
 
 app = typer.Typer()
 
 
-async def get_player_from_url_extension(
-    player_url_extension: str, client_session: aiohttp.ClientSession
-) -> Player:
-    logger.info(f"Scraping player data from {player_url_extension}")
-    url = f"https://www.tennisexplorer.com/{player_url_extension}/"
-    html = await async_get_with_retry(client_session, url)
-    player = player_from_html(
-        html=html, player_detail_url_extension=player_url_extension
-    )
-    return player
+# async def get_player_from_url_extension(
+#     player_url_extension: str, client_session: aiohttp.ClientSession
+# ) -> Player:
+#     logger.info(f"Scraping player data from {player_url_extension}")
+#     url = f"https://www.tennisexplorer.com/{player_url_extension}/"
+#     html = await async_get_with_retry(client_session, url)
+#     player = player_from_html(
+#         html=html, player_detail_url_extension=player_url_extension
+#     )
+#     return player
 
 
 async def scrape_matches_from_url(

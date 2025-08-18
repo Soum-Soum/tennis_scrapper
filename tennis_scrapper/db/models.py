@@ -83,13 +83,20 @@ class Tournament(HashedIDModel, table=True):
 
 
 class Player(HashedIDModel, table=True):
-    player_id: str = Field(default=None, primary_key=True)
+    player_id: str = Field(default=None, primary_key=True, index=True)
     name: str = Field(nullable=False)
     country: str = Field(nullable=False)
     birth_date: datetime.date = Field(nullable=False)
     gender: Gender = Field(nullable=False)
     preferred_hand: str = Field(nullable=False, description="Player's preferred hand")
-    url_extension: str = Field(description="URL extension for player details")
+    url_extension: str = Field(
+        description="URL extension for player details", index=True
+    )
+
+    __table_args__ = (
+        Index("idx_player_name", "name"),
+        Index("idx_player_country", "country"),
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -102,12 +109,15 @@ class Player(HashedIDModel, table=True):
 
 
 class BaseMatch(HashedIDModel):
-    tournament_id: str = Field(foreign_key="tournament.tournament_id", nullable=False)
+    tournament_url_extension: str = Field(
+        nullable=False, description="URL extension for tournament details"
+    )
+    tournament_id: str = Field(foreign_key="tournament.tournament_id", nullable=True)
     date: datetime.date = Field(nullable=False, index=True)
     players_gender: Gender = Field(nullable=False)
-    surface: Surface = Field(nullable=False, description="Match surface type")
-    player_1_id: str = Field(foreign_key="player.player_id", nullable=False)
-    player_2_id: str = Field(foreign_key="player.player_id", nullable=False)
+    surface: Surface = Field(description="Match surface type", nullable=True)
+    player_1_id: str = Field(foreign_key="player.player_id", nullable=True)
+    player_2_id: str = Field(foreign_key="player.player_id", nullable=True)
     player_1_url_extension: str = Field(
         nullable=False, description="URL extension for player 1 details"
     )
@@ -133,9 +143,7 @@ class Match(BaseMatch, table=True):
         default="UNKNOWN",
         description="Round of the match (e.g. 'Final', 'Semi-Final', 'Quarter-Final')",
     )
-    score: str = Field(
-        nullable=False, description="Match score in format '6-3 6-4' or '6-3 3-6 6-4'"
-    )
+    score: str = Field(description="Match score in format '6-3 6-4' or '6-3 3-6 6-4'")
     player_1_elo: float = Field(
         default=None,
         nullable=True,
@@ -186,15 +194,11 @@ class Match(BaseMatch, table=True):
         if self.match_id:
             raise ValueError(f"Match ID is already set: {self.match_id}")
         self.match_id = self.generate_hashed_id(
-            self.tournament_id,
+            self.tournament_url_extension,
             self.date,
             self.player_1_url_extension,
             self.player_2_url_extension,
             self.score,
-            self.player_1_odds,
-            self.player_2_odds,
-            self.round,
-            self.surface,
         )
 
     def __hash__(self):

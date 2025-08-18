@@ -1,41 +1,37 @@
 import asyncio
 from datetime import date, datetime, timedelta
-from difflib import Match
-import select
 import aiohttp
 from loguru import logger
-import pandas as pd
-from sqlmodel import Session, func
+from sqlmodel import Session, select, func
 from tqdm.asyncio import tqdm
 import typer
 
-from db.db_utils import get_session, insert_if_not_exists
-from db.models import Player, Tournament
-from scrap.matches import MatchData, get_match_scrapping_tasks
+from db.db_utils import get_session
+from db.models import Player, Match
+from scrap.matches import get_match_scrapping_tasks
+from scrap.tournaments import get_tournaments_scrapping_tasks
 from scrap.players import get_players_scrapping_tasks
-from tennis_scrapper.scrap.tournaments import get_tournaments_scrapping_tasks
 
 
 app = typer.Typer()
 
 
 def get_new_players_url_extensions(
-    db_session: Session, match_data_list: list[MatchData]
+    db_session: Session,
 ) -> set[str]:
-    existing_players_url_extensions = db_session.exec(
+    players_in_db_url_extensions = db_session.exec(
         select(Player.url_extension).distinct()
     ).all()
-    existing_players_url_extensions = set(existing_players_url_extensions)
+    players_in_db_url_extensions = set(players_in_db_url_extensions)
 
-    all_unique_players_url_extentions = set()
-    for match_data in match_data_list:
-        all_unique_players_url_extentions.add(match_data.player_1_url_extension)
-        all_unique_players_url_extentions.add(match_data.player_2_url_extension)
+    match_players_url_extensions = db_session.exec(
+        select(Match.player_1_url_extension).union(
+            select(Match.player_2_url_extension)
+        )
+    ).all()
+    match_players_url_extensions = set(map(lambda x: x[0], match_players_url_extensions))
 
-    new_players_url_extensions = (
-        all_unique_players_url_extentions - existing_players_url_extensions
-    )
-    return new_players_url_extensions
+    return match_players_url_extensions - players_in_db_url_extensions
 
 
 def get_intervals(
@@ -80,43 +76,40 @@ async def process_one_interval(
 ):
     logger.info(f"Start processing interval: {from_date} to {to_date}")
 
-    tournaments = await tqdm.gather(
-        *get_tournaments_scrapping_tasks(http_session, from_date, to_date),
+    await tqdm.gather(
+        *get_tournaments_scrapping_tasks(db_session, http_session, from_date, to_date),
         desc="Scraping tournaments data",
         unit="tournament",
     )
-    tournaments = sum(tournaments, [])
-    logger.info(
-        f"Found {len(tournaments)} tournaments to merge with the existing ones in the database"
-    )
-    insert_if_not_exists(db_session=db_session, table=Tournament, instances=tournaments)
 
-    match_data_list = await tqdm.gather(
-        *get_match_scrapping_tasks(http_session, from_date, to_date),
+    await tqdm.gather(
+        *get_match_scrapping_tasks(db_session, http_session, from_date, to_date),
         desc=f"Scraping matches data from {from_date} to {to_date}",
         unit="page",
     )
-
-    match_data_list = sum(map(list, match_data_list), [])
-    logger.info(f"Found {len(match_data_list)} new matches to store in the database")
-
-    new_players_url_extensions = get_new_players_url_extensions(
-        db_session, match_data_list
-    )
+    
+    new_players_url_extensions = get_new_players_url_extensions(db_session)
     logger.info(
         f"Found {len(new_players_url_extensions)} new players to store in the database"
     )
 
-    new_players = await tqdm.gather(
-        *get_players_scrapping_tasks(http_session, new_players_url_extensions),
+    await tqdm.gather(
+        *get_players_scrapping_tasks(db_session, http_session, new_players_url_extensions),
         desc="Scraping players data",
         unit="player",
     )
-    logger.info(f"Found {len(new_players)} new players to store in the database")
 
-    db_session.add_all(new_players)
-    db_session.commit()
-    logger.info(f"Inserted {len(new_players)} new players into the database")
+
+    
+    
+    # new_rankings = await tqdm.gather(
+    #     *get_ranking_scrapping_tasks(http_session, from_date, to_date),
+    #     desc="Scraping players rankings",
+    #     unit="player",
+    # )
+    # logger.info(f"Found {len(new_rankings)} new rankings to store in the database")
+    # db_session.add_all(new_rankings)
+    # db_session.commit()
 
 
 async def scrap_all_data(from_date: date, to_date: date):
@@ -128,6 +121,8 @@ async def scrap_all_data(from_date: date, to_date: date):
             for from_date, to_date in intervals:
 
                 await process_one_interval(db_session, http_session, from_date, to_date)
+                
+            
 
 
 @app.command(help="Scrape all data from Tennis Explorer and store it in the database.")
@@ -140,7 +135,10 @@ def scrap_all(
     ),
 ):
 
-    asyncio.run(scrap_all_data(from_date.date(), to_date.date()))
+    try:
+        asyncio.run(scrap_all_data(from_date.date(), to_date.date()))
+    except Exception as e:
+        logger.error(f"Error occurred while scraping data: {e}")
 
 
 if __name__ == "__main__":

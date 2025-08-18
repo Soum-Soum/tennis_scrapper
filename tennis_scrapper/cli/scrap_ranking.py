@@ -10,7 +10,7 @@ from tqdm.asyncio import tqdm
 
 from db.db_utils import clear_table, engine, insert_if_not_exists
 from db.models import Gender, Ranking, Match
-from scrap.rankings import scarp_dates
+from scrap.rankings import 
 from utils.http_utils import async_get_with_retry
 
 

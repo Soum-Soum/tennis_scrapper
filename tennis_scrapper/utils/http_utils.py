@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional, Dict
 
 import aiohttp
@@ -17,10 +18,14 @@ def _check_response_status(status: int, url: str, exc_type):
         raise exc_type(f"Status {status} for {url}")
 
 
+
 @retry(
     stop=stop_after_attempt(10),
     wait=wait_exponential(multiplier=1, min=2, max=30),
-    retry=retry_if_exception_type(aiohttp.ClientError),
+    retry=(
+        retry_if_exception_type(aiohttp.ClientError) |
+        retry_if_exception_type(asyncio.TimeoutError)
+    ),
 )
 async def async_get_with_retry(
     session: aiohttp.ClientSession, url: str, headers: Optional[Dict[str, str]] = None

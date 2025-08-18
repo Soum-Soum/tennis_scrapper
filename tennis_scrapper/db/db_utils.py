@@ -110,29 +110,22 @@ def insert_if_not_exists(
             insert_one_batch(instances[i : i + batch_size])
 
 
-def set_tournament_as_scraped(tournament: Tournament) -> None:
-    with Session(engine) as session:
-        attached_tournament = session.exec(
-            select(Tournament).where(
-                Tournament.tournament_id == tournament.tournament_id
-            )
-        ).first()
-        if attached_tournament:
-            attached_tournament.has_been_scraped = True
-            session.commit()
-
-
-def unset_all_tournament_as_scraped() -> None:
-    with Session(engine) as session:
-        tournaments = get_table(Tournament)
-        for tournament in tournaments:
-            tournament.has_been_scraped = False
-            session.add(tournament)
-        session.commit()
-
-
 def get_player_by_name(player_name: str) -> Optional[Player]:
     with Session(engine) as session:
         statement = select(Player).where(Player.name.like(f"%{player_name}%"))
+        result = session.exec(statement)
+        return result.first()
+
+
+def get_tournament_by_url(url_extention: str) -> Optional[Tournament]:
+    with Session(engine) as session:
+        statement = select(Tournament).where(Tournament.url_extension == url_extention)
+        result = session.exec(statement)
+        return result.first()
+
+
+def get_player_by_url(url_extension: str) -> Optional[Player]:
+    with Session(engine) as session:
+        statement = select(Player).where(Player.url_extension == url_extension)
         result = session.exec(statement)
         return result.first()

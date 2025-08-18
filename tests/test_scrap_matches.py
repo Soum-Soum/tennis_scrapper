@@ -1,9 +1,9 @@
 from datetime import datetime
 from bs4 import BeautifulSoup
 import pytest
-from tennis_scrapper.db.models import Gender, Tournament
-from tennis_scrapper.scrap.matches import pair_to_match
-from tennis_scrapper.scrap.tournaments import get_default_tournament
+from db.models import Gender, Tournament
+from scrap.matches import pair_to_match
+from scrap.tournaments import get_default_tournament
 
 
 @pytest.fixture
