@@ -1,6 +1,7 @@
 import sys
 from typing import Type, TypeVar, Optional
 
+from loguru import logger
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import (
     SQLModel,
@@ -10,6 +11,7 @@ from sqlmodel import (
     inspect,
     select,
     delete,
+    text,
 )
 from tqdm import tqdm
 
@@ -109,23 +111,46 @@ def insert_if_not_exists(
         ):
             insert_one_batch(instances[i : i + batch_size])
 
+def add_player_id_to_ranking_table(db_session: Session):
+    logger.info("Adding player IDs to ranking table...")
+    
+    UPDATE_RANKING_TABLE = """
+        UPDATE ranking r
+        SET player_id = p.player_id
+        FROM player p
+        WHERE r.player_id IS NULL
+        AND lower(trim(r.player_detail_url_extension)) = lower(trim(p.url_extension));
+    """
 
-def get_player_by_name(player_name: str) -> Optional[Player]:
-    with Session(engine) as session:
-        statement = select(Player).where(Player.name.like(f"%{player_name}%"))
-        result = session.exec(statement)
-        return result.first()
+    db_session.exec(text(UPDATE_RANKING_TABLE))
+    db_session.commit()
+    
+def add_player_id_to_match_table(db_session: Session):
+    logger.info("Adding player IDs to match table...")
 
+    UPDATE_MATCH_TABLE = """
+        UPDATE match m
+        SET player_{k}_id = p.player_id
+        FROM player p
+        WHERE m.player_{k}_id IS NULL
+        AND lower(trim(m.player_{k}_url_extension)) = lower(trim(p.url_extension));
+    """
+    
+    for k in [1, 2]:
+        logger.info(f"Updating player {k} IDs in match table...")
+        db_session.exec(text(UPDATE_MATCH_TABLE.format(k=k)))
+        db_session.commit()
 
-def get_tournament_by_url(url_extention: str) -> Optional[Tournament]:
-    with Session(engine) as session:
-        statement = select(Tournament).where(Tournament.url_extension == url_extention)
-        result = session.exec(statement)
-        return result.first()
+def add_tournament_to_match_table(db_session: Session):
+    logger.info("Adding tournament data to match table...")
 
+    UPDATE_MATCH_TABLE = """
+        UPDATE match m
+        SET tournament_id = t.tournament_id,
+            surface = t.surface
+        FROM tournament t
+        WHERE m.tournament_url_extension = t.url_extension;
+    """
 
-def get_player_by_url(url_extension: str) -> Optional[Player]:
-    with Session(engine) as session:
-        statement = select(Player).where(Player.url_extension == url_extension)
-        result = session.exec(statement)
-        return result.first()
+    db_session.exec(text(UPDATE_MATCH_TABLE))
+    db_session.commit()

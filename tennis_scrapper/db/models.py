@@ -208,10 +208,10 @@ class Match(BaseMatch, table=True):
 class Ranking(HashedIDModel, table=True):
     ranking_id: str = Field(default=None, primary_key=True)
     date: datetime.date
-    rank: float
+    rank: int
     player_name: str
     player_detail_url_extension: str
-    points: float
+    points: int
     circuit: str = Field(nullable=False, description="ATP or WTA circuit")
     player_id: str = Field(
         default=None,

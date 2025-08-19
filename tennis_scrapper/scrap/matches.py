@@ -16,27 +16,6 @@ from scrap.urls import get_match_list_page_url
 from utils.http_utils import async_get_with_retry
 
 
-# class MatchData(BaseModel):
-#     date: datetime.date
-#     tournament_url_extension: str
-#     player_1_url_extension: str
-#     player_2_url_extension: str
-#     score: str
-#     player_1_odds: Optional[float]
-#     player_2_odds: Optional[float]
-
-#     def __hash__(self):
-#         return hash(
-#             (
-#                 self.date,
-#                 self.tournament_url_extension,
-#                 self.player_1_url_extension,
-#                 self.player_2_url_extension,
-#                 self.score,
-#             )
-#         )
-
-
 def parse_score(tr1, tr2) -> str:
     def remove_sup(s: str) -> str:
         if "<sup>" not in s:
@@ -203,34 +182,6 @@ def match_data_set_from_html(
     return matches
 
 
-# def match_data_to_match(
-#     db_session: Session, html_session: aiohttp.ClientSession, match_data: MatchData
-# ) -> Match:
-#     tournament = get_tournament_by_url(match_data.tournament_url_extension)
-#     assert (
-#         tournament is not None
-#     ), f"Unable to find tournament for {match_data.tournament_url_extension}"
-
-#     player_1 = get_player(
-#         db_session=db_session,
-#         html_session=html_session,
-#         player_url_extension=match_data.player_1_url_extension,
-#     )
-#     player_2 = get_player(
-#         db_session=db_session,
-#         html_session=html_session,
-#         player_url_extension=match_data.player_2_url_extension,
-#     )
-
-#     return Match(
-#         player_1_id=player_1.player_id,
-#         player_2_id=player_2.player_id,
-#         tournament_id=tournament.tournament_id,
-#         surface=tournament.surface,
-#         **match_data.model_dump(),
-#     )
-
-
 async def scrap_match_data(
     db_session: Session,
     html_session: aiohttp.ClientSession,
@@ -241,6 +192,10 @@ async def scrap_match_data(
     html = await async_get_with_retry(
         html_session, url, headers={"Accept": "text/html"}
     )
+    if html is None:
+        logger.error(f"Failed to fetch match data from {url}")
+        return
+    
     matches = match_data_set_from_html(html, date, gender)
     
 

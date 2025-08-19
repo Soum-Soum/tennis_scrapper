@@ -12,7 +12,6 @@ from bs4 import BeautifulSoup
 import datetime
 
 from scrap.urls import get_player_detail_url
-from db.db_utils import get_player_by_url, insert_if_not_exists
 from utils.http_utils import async_get_with_retry
 
 
@@ -69,11 +68,17 @@ async def scrap_player_details(
     db_session: Session, html_session: aiohttp.ClientSession, player_url_extension: str
 ) -> None:
     url = get_player_detail_url(player_url_extension)
+    
     html = await async_get_with_retry(
         html_session, url, headers={"Accept": "text/html"}
     )
-    player = player_from_html(html, player_url_extension)
     
+    if html is None:
+        logger.error(f"Failed to fetch match data from {url}")
+        return
+    
+    player = player_from_html(html, player_url_extension)
+
     db_session.add(player)
     db_session.commit()
     logger.success(

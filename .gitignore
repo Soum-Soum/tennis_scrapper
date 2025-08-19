@@ -15,3 +15,7 @@ wheels/
 .idea
 output/
 *checkpoint*
+
+.vscode/
+*.ipynb
+classifier.json

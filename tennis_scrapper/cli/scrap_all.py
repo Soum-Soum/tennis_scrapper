@@ -6,11 +6,12 @@ from sqlmodel import Session, select, func
 from tqdm.asyncio import tqdm
 import typer
 
-from db.db_utils import get_session
+from db.db_utils import add_player_id_to_match_table, add_player_id_to_ranking_table, add_tournament_to_match_table, get_session
 from db.models import Player, Match
 from scrap.matches import get_match_scrapping_tasks
 from scrap.tournaments import get_tournaments_scrapping_tasks
 from scrap.players import get_players_scrapping_tasks
+from scrap.rankings import get_ranking_scrapping_tasks, scrap_dates
 
 
 app = typer.Typer()
@@ -87,7 +88,7 @@ async def process_one_interval(
         desc=f"Scraping matches data from {from_date} to {to_date}",
         unit="page",
     )
-    
+
     new_players_url_extensions = get_new_players_url_extensions(db_session)
     logger.info(
         f"Found {len(new_players_url_extensions)} new players to store in the database"
@@ -98,18 +99,14 @@ async def process_one_interval(
         desc="Scraping players data",
         unit="player",
     )
-
-
     
+    gender_to_dates = await scrap_dates(http_session, from_date, to_date)
+    await tqdm.gather(
+        *get_ranking_scrapping_tasks(db_session, http_session, gender_to_dates),
+        desc="Scraping players rankings",
+        unit="date",
+    )
     
-    # new_rankings = await tqdm.gather(
-    #     *get_ranking_scrapping_tasks(http_session, from_date, to_date),
-    #     desc="Scraping players rankings",
-    #     unit="player",
-    # )
-    # logger.info(f"Found {len(new_rankings)} new rankings to store in the database")
-    # db_session.add_all(new_rankings)
-    # db_session.commit()
 
 
 async def scrap_all_data(from_date: date, to_date: date):
@@ -121,24 +118,21 @@ async def scrap_all_data(from_date: date, to_date: date):
             for from_date, to_date in intervals:
 
                 await process_one_interval(db_session, http_session, from_date, to_date)
-                
-            
+
+            add_player_id_to_ranking_table(db_session)
+            add_player_id_to_match_table(db_session)
+            add_tournament_to_match_table(db_session)
 
 
 @app.command(help="Scrape all data from Tennis Explorer and store it in the database.")
 def scrap_all(
-    from_date: datetime = typer.Option(
-        datetime(2010, 1, 1), help="The start date for the data scraping."
-    ),
-    to_date: datetime = typer.Option(
-        datetime.today(), help="The end date for the data scraping."
-    ),
+    from_date: datetime = typer.Option(datetime(2010, 1, 1)),
+    to_date: datetime = typer.Option(datetime.today()),
 ):
-
     try:
         asyncio.run(scrap_all_data(from_date.date(), to_date.date()))
-    except Exception as e:
-        logger.error(f"Error occurred while scraping data: {e}")
+    except Exception:
+        logger.exception("Error occurred while scraping data")
 
 
 if __name__ == "__main__":

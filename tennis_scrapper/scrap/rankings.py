@@ -2,9 +2,12 @@ from datetime import datetime, date
 from typing import Any, Coroutine
 
 from bs4 import BeautifulSoup
+from loguru import logger
+from sqlmodel import Session
 from tqdm.asyncio import tqdm
 from db.models import Gender, Ranking
 from scrap.urls import get_ranking_date_url, get_ranking_url
+from db.db_utils import insert_if_not_exists
 from utils.http_utils import async_get_with_retry
 
 
@@ -38,13 +41,13 @@ async def scrap_dates(
         for year in range(from_date.year, to_date.year + 1):
             tasks.append(one_year_date_list(session, gender, year))
 
-            dates_lists = await tqdm.gather(
-                *tasks,
-                desc=f"Scraping rankings dates for {gender} {from_date.year}-{to_date.year}",
-                unit="page",
-            )
-            dates = sum(dates_lists, [])
-            gender_to_dates[gender] = dates
+        dates_lists = await tqdm.gather(
+            *tasks,
+            desc=f"Scraping rankings dates for {gender} {from_date.year}-{to_date.year}",
+            unit="page",
+        )
+        dates = sum(dates_lists, [])
+        gender_to_dates[gender] = dates
 
     return gender_to_dates
 
@@ -62,14 +65,14 @@ def rankings_from_html(
     rankings = []
 
     for tr in trs:
-        rank = float(tr.find("td", class_="rank").get_text(strip=True))
+        rank = int(float(tr.find("td", class_="rank").get_text(strip=True)))
         td_name = tr.find("td", class_="t-name")
         player_name = td_name.find("a").get_text(strip=True)
         player_detail_url_extension = td_name.find("a")["href"]
-        points = float(tr.find("td", class_="long-point").get_text(strip=True))
+        points = int(float(tr.find("td", class_="long-point").get_text(strip=True)))
         rankings.append(
             Ranking(
-                date=date(),
+                date=date,
                 rank=rank,
                 player_name=player_name,
                 player_detail_url_extension=player_detail_url_extension,
@@ -82,25 +85,25 @@ def rankings_from_html(
 
 
 async def scrape_rankings_one_page(
-    session: aiohttp.ClientSession, gender: Gender, date: date, page_index: int
-) -> list[Ranking]:
+    db_session: Session, html_session: aiohttp.ClientSession, gender: Gender, date: date, page_index: int
+) -> None:
     url = get_ranking_url(gender, date, page_index=page_index)
-    html = await async_get_with_retry(session, url, headers={"Accept": "text/html"})
+    html = await async_get_with_retry(html_session, url, headers={"Accept": "text/html"})
     all_rankings = rankings_from_html(html, gender, date)
-    return all_rankings
+
+    insert_if_not_exists(db_session, table=Ranking, instances=all_rankings)
 
 
 def get_ranking_scrapping_tasks(
-    session: aiohttp.ClientSession, from_date: date, to_date: date
-) -> list[Coroutine[Any, Any, list[Ranking]]]:
-    gender_to_dates = scrap_dates(session, from_date, to_date)
+    db_session: Session, session: aiohttp.ClientSession, gender_to_dates: dict[Gender, list[date]]
+) -> list[Coroutine[Any, Any, None]]:
 
     tasks = []
     for gender, dates in gender_to_dates.items():
         for date in dates:
             tasks.extend(
                 [
-                    scrape_rankings_one_page(session, gender, date, page_index)
+                    scrape_rankings_one_page(db_session,session, gender, date, page_index)
                     for page_index in range(1, 50)
                 ]
             )

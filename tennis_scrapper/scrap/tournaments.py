@@ -93,12 +93,12 @@ def tournaments_from_html(html: str, players_gender: Gender) -> List[Tournament]
 
 def get_default_tournament(year: int, players_gender: Gender) -> Tournament:
     return Tournament(
-        name=f"Default {year} ({players_gender.name})",
+        name=f"DEFAULT-{players_gender}-{year}",
         year=year,
         surface=Surface.UNKNOWN,
         cash_prize=0,
         players_gender=players_gender,
-        url_extension="",
+        url_extension=f"DEFAULT-{players_gender}-{year}",
     )
 
 
@@ -109,6 +109,9 @@ async def scrap_tournaments(
     html = await async_get_with_retry(
         html_session, url, headers={"Accept": "text/html"}
     )
+    if html is None:
+        logger.error(f"Failed to fetch match data from {url}")
+        return
     tournaments = tournaments_from_html(html, gender)
     if not tournaments:
         logger.info(f"No tournaments found for {url}")

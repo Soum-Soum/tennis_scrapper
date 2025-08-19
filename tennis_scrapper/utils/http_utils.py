@@ -2,6 +2,7 @@ import asyncio
 from typing import Optional, Dict
 
 import aiohttp
+from loguru import logger
 import requests
 from tenacity import (
     retry,
@@ -31,8 +32,12 @@ async def async_get_with_retry(
     session: aiohttp.ClientSession, url: str, headers: Optional[Dict[str, str]] = None
 ) -> Optional[str]:
     async with session.get(url, headers=headers) as resp:
-        _check_response_status(resp.status, url, aiohttp.ClientError)
-        return await resp.text()
+        try:
+            _check_response_status(resp.status, url, aiohttp.ClientError)
+            return await resp.text()
+        except RuntimeError as e:
+            logger.error(f"Error occurred while fetching {url}: {e}")
+            return None
 
 
 @retry(
