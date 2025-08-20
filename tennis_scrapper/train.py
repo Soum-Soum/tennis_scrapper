@@ -11,9 +11,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from typing import List, Tuple
 
+import typer
 from xgboost import XGBClassifier
 
-from plot import save_all_plots
+from plot import plot_feature_importances, save_all_plots
 
 
 class ColsData(BaseModel):
@@ -74,7 +75,7 @@ def validate_cols(df: pd.DataFrame, cols_data: ColsData) -> pd.DataFrame:
 
 def time_split_shuffle(
     df: pd.DataFrame,
-    split_date: pd.Timestamp,
+    split_date: datetime,
     target_col: str,
     date_col: str = "date",
     random_state: int = 42,
@@ -184,40 +185,77 @@ def build_xgb(
     return XGBClassifier(**defaults)
 
 
-def build_catboost(
-    random_state: int = 42,
-    **kwargs,
-) -> CatBoostClassifier:
-    """Instantiate a CatBoostClassifier with sensible defaults; kwargs override them."""
-    defaults = dict(
-        iterations=2000,
-        depth=6,
-        learning_rate=0.05,
-        random_state=random_state,
-        verbose=100,
-    )
-    defaults.update(kwargs)
-    return CatBoostClassifier(**defaults)
+# def build_catboost(
+#     random_state: int = 42,
+#     **kwargs,
+# ) -> CatBoostClassifier:
+#     """Instantiate a CatBoostClassifier with sensible defaults; kwargs override them."""
+#     defaults = dict(
+#         iterations=2000,
+#         depth=6,
+#         learning_rate=0.05,
+#         random_state=random_state,
+#         verbose=100,
+#     )
+#     defaults.update(kwargs)
+#     return CatBoostClassifier(**defaults)
 
 
-if __name__ == "__main__":
-    RANDOM_STATE = 42
+def save_dfs_for_cache(
+    X_train: pd.DataFrame,
+    X_val: pd.DataFrame,
+    y_train: pd.Series,
+    y_val: pd.Series,
+    scaler: StandardScaler,
+    X_train_scaled: pd.DataFrame,
+    X_val_scaled: pd.DataFrame,
+    save_dir: Path,
+):
+    X_train.to_parquet(save_dir / "X_train.parquet")
+    X_val.to_parquet(save_dir / "X_val.parquet")
+    pd.DataFrame(y_train).to_parquet(save_dir / "y_train.parquet")
+    pd.DataFrame(y_val).to_parquet(save_dir / "y_val.parquet")
 
-    data_save_path = Path("output/data")
-    if (data_save_path / "X_train.parquet").exists():
-        logger.info("Data already processed, loading from disk.")
+    joblib.dump(scaler, save_dir / "scaler.pkl")
+    X_train_scaled.to_parquet(save_dir / "X_train_scaled.parquet")
+    X_val_scaled.to_parquet(save_dir / "X_val_scaled.parquet")
+
+
+app = typer.Typer()
+
+
+@app.command()
+def train_model(
+    base_dir: Path = typer.Option(
+        default="output", help="Path to save the trained model"
+    ),
+    split_date: datetime = typer.Option(
+        default=datetime.strptime("2025-01-01", "%Y-%m-%d"),
+        help="Date to split the training and validation sets",
+    ),
+    use_cache: bool = typer.Option(default=False, help="Whether to use cached data"),
+    random_state: int = typer.Option(
+        default=42, help="Random state for reproducibility"
+    ),
+):
+
+    data_save_path = base_dir / "data"
+    if use_cache:
         X_train_scaled = pd.read_parquet(data_save_path / "X_train_scaled.parquet")
         X_val_scaled = pd.read_parquet(data_save_path / "X_val_scaled.parquet")
         y_train = pd.read_parquet(data_save_path / "y_train.parquet")["result"]
         y_val = pd.read_parquet(data_save_path / "y_val.parquet")["result"]
+
     else:
 
-        with open("cols_data.json") as f:
+        with open("resources/cols_data.json") as f:
+            logger.info("Loading columns data from JSON")
             cols_data = ColsData.model_validate(json.load(f))
 
-        chunks = list(Path("output/chunks/").glob("*.parquet"))
+        chunks = list((base_dir / "chunks/").glob("*.parquet"))
         df = pd.concat(list(map(pd.read_parquet, chunks))).copy()
-        df["result"] = 1
+        logger.info(f"Loaded {len(df)} records from {len(chunks)} chunks")
+        df["result"] = 0
 
         df_flipped = randomly_flip_players(df, target_col=cols_data.target)
 
@@ -228,46 +266,90 @@ if __name__ == "__main__":
         df_flipped = df_flipped.drop(columns=cols_data.categorical)
         df_flipped = df_flipped.drop(columns=cols_data.other)
 
-        split_date = datetime.strptime("2025-01-01", "%Y-%m-%d")
         X_train, X_val, y_train, y_val = time_split_shuffle(
             df_flipped,
             split_date=split_date,
             target_col=cols_data.target,
             date_col=cols_data.date_column,
-            random_state=RANDOM_STATE,
+            random_state=random_state,
         )
-
-        X_train.to_parquet(data_save_path / "X_train.parquet")
-        X_val.to_parquet(data_save_path / "X_val.parquet")
 
         X_train_scaled, X_val_scaled, scaler = normalize_numerical(
             X_train, X_val, cols_data.numerical
         )
 
-        joblib.dump(scaler, data_save_path / "scaler.pkl")
-        X_train_scaled.to_parquet(data_save_path / "X_train_scaled.parquet")
-        X_val_scaled.to_parquet(data_save_path / "X_val_scaled.parquet")
-        pd.DataFrame(y_train).to_parquet(data_save_path / "y_train.parquet")
-        pd.DataFrame(y_val).to_parquet(data_save_path / "y_val.parquet")
+        save_dfs_for_cache(
+            X_train=X_train,
+            X_val=X_val,
+            y_train=y_train,
+            y_val=y_val,
+            scaler=scaler,
+            X_train_scaled=X_train_scaled,
+            X_val_scaled=X_val_scaled,
+            save_dir=data_save_path,
+        )
 
     spw = compute_scale_pos_weight(y_train)
     xgb_kwargs = {"n_estimators": 1200, "max_depth": 8, "min_child_weight": 15}
-    # xgb_kwargs = {}
-    model = build_xgb(scale_pos_weight=spw, random_state=RANDOM_STATE, **xgb_kwargs)
-    # model = build_catboost(random_state=RANDOM_STATE, **xgb_kwargs)
+    model = build_xgb(scale_pos_weight=spw, random_state=random_state, **xgb_kwargs)
     model.fit(
         X_train_scaled,
         y_train,
         eval_set=[((X_train_scaled, y_train)), (X_val_scaled, y_val)],
         verbose=100,
     )
-    model.save_model("classifier.json")
 
+    model_save_dir = base_dir / "model"
+    model_save_dir.mkdir(parents=True, exist_ok=True)
+    model.save_model(model_save_dir / "classifier.json")
     model_loaded = XGBClassifier()
-    model_loaded.load_model("classifier.json")
+    model_loaded.load_model(model_save_dir / "classifier.json")
 
+    plot_save_dir = base_dir / "plots"
+    plot_save_dir.mkdir(parents=True, exist_ok=True)
     save_all_plots(
         y_pred_list=[model_loaded.predict_proba(X_val_scaled)[:, 1]],
         y_true_list=[y_val],
-        save_dir=Path("output/plots"),
+        save_dir=plot_save_dir,
     )
+
+    fi = model_loaded.feature_importances_
+    fi_df = pd.DataFrame(
+        {"feature": X_train_scaled.columns, "importance": fi}
+    ).sort_values(by="importance", ascending=False)
+    plot_feature_importances(
+        fi_df["importance"],
+        feature_names=fi_df["feature"],
+        top_k=20,
+        save_path=plot_save_dir / "feature_importances.png",
+    )
+
+    # mean_imp = fi_df["importance"].mean()
+    # logger.info(f"Mean feature importance: {mean_imp}")
+    # features_to_keep = fi_df[fi_df["importance"] > mean_imp]["feature"]
+    # logger.info(
+    #     f"Removing {len(X_train_scaled.columns) - len(features_to_keep)} features"
+    # )
+    # X_train_filtered = X_train_scaled[features_to_keep]
+    # X_val_filtered = X_val_scaled[features_to_keep]
+
+    # xgb_kwargs = {"n_estimators": 1200, "max_depth": 12, "min_child_weight": 15}
+    # model_2 = build_xgb(scale_pos_weight=spw, random_state=random_state, **xgb_kwargs)
+    # model_2.fit(
+    #     X_train_filtered,
+    #     y_train,
+    #     eval_set=[((X_train_filtered, y_train)), (X_val_filtered, y_val)],
+    #     verbose=100,
+    # )
+
+    # plot_save_dir_2 = base_dir / "plots_filtered"
+    # plot_save_dir_2.mkdir(parents=True, exist_ok=True)
+    # save_all_plots(
+    #     y_pred_list=[model_2.predict_proba(X_val_filtered)[:, 1]],
+    #     y_true_list=[y_val],
+    #     save_dir=plot_save_dir_2,
+    # )
+
+
+if __name__ == "__main__":
+    app()

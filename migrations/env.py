@@ -6,8 +6,8 @@ from sqlmodel import SQLModel
 
 from alembic import context
 
-from conf.config import settings
-from db.models import Match, Player, Tournament, Ranking
+from tennis_scrapper.conf.config import settings
+from tennis_scrapper.db.models import Match, Player, Tournament, Ranking
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

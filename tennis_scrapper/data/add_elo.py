@@ -95,40 +95,42 @@ class EloAggregator:
         return match
 
 
-def add_elo():
+def add_elo(db_session: Session):
 
-    with Session(engine) as session:
-        min_date, max_date = session.exec(
-            select(
-                func.min(Match.date).label("date_min"),
-                func.max(Match.date).label("date_max"),
+    min_date, max_date = db_session.exec(
+        select(
+            func.min(Match.date).label("date_min"),
+            func.max(Match.date).label("date_max"),
+        )
+    ).first()
+    days_diff = (max_date - min_date).days
+
+    players = get_table(Player)
+
+    elo_aggregator = EloAggregator(players=players)
+
+    day_offset = 30
+    for days_diff in tqdm(
+        range(0, days_diff, day_offset),
+        desc=f"Computing ELOs between {min_date} and {max_date}",
+        unit="month",
+    ):
+        current_date = min_date + datetime.timedelta(days=days_diff)
+        next_date = current_date + datetime.timedelta(days=day_offset)
+
+        logger.info(f"Processing matches from {current_date} to {next_date}")
+
+        matches = db_session.exec(
+            select(Match)
+            .where(
+                Match.date >= current_date,
+                Match.date < next_date,
             )
-        ).first()
-        days_diff = (max_date - min_date).days
+            .order_by(Match.date),
+        ).all()
 
-        players = get_table(Player)
+        matches = list(filter(lambda m: m.surface is not None, matches))
 
-        elo_aggregator = EloAggregator(players=players)
-
-        for days_diff in tqdm(
-            range(0, days_diff, 7),
-            desc=f"Computing ELOs between {min_date} and {max_date}",
-            unit="weeks",
-        ):
-            current_date = min_date + datetime.timedelta(days=days_diff)
-            next_date = current_date + datetime.timedelta(days=7)
-
-            logger.info(f"Processing matches from {current_date} to {next_date}")
-
-            matches = session.exec(
-                select(Match)
-                .where(
-                    Match.date >= current_date,
-                    Match.date < next_date,
-                )
-                .order_by(Match.date),
-            ).all()
-
-            matches = [elo_aggregator.update_elo(match) for match in matches]
-            session.add_all(matches)
-            session.commit()
+        matches = [elo_aggregator.update_elo(match) for match in matches]
+        db_session.add_all(matches)
+    db_session.commit()

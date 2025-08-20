@@ -1,19 +1,11 @@
-#!/usr/bin/env python3
-"""
-Tennis Match Statistics Generator
-
-This script processes tennis match data to generate comprehensive statistics
-for each match including player performance metrics, head-to-head records,
-and surface-specific statistics.
-"""
-
 import asyncio
 import datetime
 import json
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any
+from typing import Optional, Dict, Tuple, Any
 
 import numpy as np
+import pandas as pd
 import typer
 from loguru import logger
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
@@ -24,8 +16,6 @@ from tqdm.asyncio import tqdm
 from conf.config import settings
 from db.db_utils import engine
 from db.models import Match, Player, Surface
-
-app = typer.Typer(help="Generate comprehensive tennis match statistics")
 
 
 def get_player_by_name(name: str) -> Optional[Player]:
@@ -53,7 +43,7 @@ async def get_player_history_at_dt(
     hit_limit: int,
     surface: Surface,
     db_session: AsyncSession,
-) -> Tuple[List[Match], List[Match]]:
+) -> tuple[list[Match], list[Match]]:
     """Get player's match history up to a specific date."""
     result = await db_session.exec(
         select(Match)
@@ -83,7 +73,7 @@ async def get_h2h_matches(
     player_2_id: str,
     match_date: datetime.date,
     db_session: AsyncSession,
-) -> List[Match]:
+) -> list[Match]:
     """Get head-to-head matches between two players."""
     result = await db_session.exec(
         select(Match)
@@ -104,7 +94,7 @@ def is_winner(match: Match, player_id: str) -> bool:
     return match.player_1_id == player_id
 
 
-def parse_score(score: str) -> List[Tuple[int, int]]:
+def parse_score(score: str) -> list[tuple[int, int]]:
     """Parse tennis score string into list of set scores."""
     score_list = []
     sets = score.split()
@@ -114,7 +104,7 @@ def parse_score(score: str) -> List[Tuple[int, int]]:
     return score_list
 
 
-def get_games_won(match: Match, player_id: str) -> List[int]:
+def get_games_won(match: Match, player_id: str) -> list[int]:
     """Get games won by player in each set."""
     parsed_score = parse_score(match.score)
     if is_winner(match, player_id):
@@ -123,7 +113,7 @@ def get_games_won(match: Match, player_id: str) -> List[int]:
         return [games[1] for games in parsed_score]
 
 
-def get_games_conceded(match: Match, player_id: str) -> List[int]:
+def get_games_conceded(match: Match, player_id: str) -> list[int]:
     """Get games conceded by player in each set."""
     parsed_score = parse_score(match.score)
     if is_winner(match, player_id):
@@ -142,7 +132,38 @@ def get_elo(match: Match, player_id: str) -> float:
         raise ValueError(f"Player {player_id} not found in match {match.id}")
 
 
-def is_match_sorted(matches: List[Match]) -> bool:
+def get_opponent_elo(match: Match, player_id: str) -> float:
+    """Get opponent's ELO rating for a match."""
+    if match.player_1_id == player_id:
+        return match.player_2_elo
+    elif match.player_2_id == player_id:
+        return match.player_1_elo
+    else:
+        raise ValueError(f"Player {player_id} not found in match {match.id}")
+
+
+def compute_opponent_elo_stat(
+    selected_matches: list[Match], player_id: str
+) -> Tuple[float, float]:
+    opponent_elo_winnig_match = []
+    opponent_elo_losing_match = []
+
+    for match in selected_matches:
+        opponent_elo = get_opponent_elo(match, player_id)
+        if opponent_elo is None:
+            continue
+
+        if is_winner(match, player_id):
+            opponent_elo_winnig_match.append(opponent_elo)
+        else:
+            opponent_elo_losing_match.append(opponent_elo)
+
+    return safe_mean(np.array(opponent_elo_winnig_match)), safe_mean(
+        np.array(opponent_elo_losing_match)
+    )
+
+
+def is_match_sorted(matches: list[Match]) -> bool:
     """Check if matches are sorted by date."""
     return all(matches[i].date <= matches[i + 1].date for i in range(len(matches) - 1))
 
@@ -154,11 +175,9 @@ def safe_mean(arr, default=0.0):
 
 
 def compute_player_stats(
-    matches: List[Match], player_id: str, k: Optional[List[int]] = None
+    matches: list[Match], player_id: str, k: Optional[list[int]]
 ) -> Dict[str, float]:
     """Compute comprehensive player statistics for different match windows."""
-    if k is None:
-        k = [3, 5, 10, 25, 50, 100, 200]
 
     stats = {}
     assert is_match_sorted(matches), "Matches must be sorted by date"
@@ -186,6 +205,16 @@ def compute_player_stats(
         first_elo = get_elo(selected_matches[0], player_id)
         last_elo = get_elo(selected_matches[-1], player_id)
 
+        mean_elo_opponent_winning_match, mean_elo_opponent_losing_match = (
+            compute_opponent_elo_stat(selected_matches, player_id)
+        )
+
+        stats[f"mean_elo_opponent_winning_match_@k={k_value}"] = (
+            mean_elo_opponent_winning_match
+        )
+        stats[f"mean_elo_opponent_losing_match_@k={k_value}"] = (
+            mean_elo_opponent_losing_match
+        )
         stats[f"elo_diff_@k={k_value}"] = last_elo - first_elo
         stats[f"win_rate_@k={k_value}"] = winning_rate
         stats[f"games_won_@k={k_value}"] = games_won_by_set
@@ -195,7 +224,7 @@ def compute_player_stats(
 
 
 def compute_h2h_stats(
-    matches: List[Match], player_1_id: str, player_2_id: str
+    matches: list[Match], player_1_id: str, player_2_id: str
 ) -> Dict[str, float]:
     """Compute head-to-head statistics between two players."""
     stats = {}
@@ -243,7 +272,7 @@ async def compute_one_match_stat(
     match: Match,
     async_engine: AsyncEngine,
     player_id_to_player: Dict[str, Player],
-    ks: List[int],
+    ks: list[int],
     output_dir: Path,
     override: bool,
 ) -> Dict:
@@ -348,7 +377,7 @@ async def compute_one_match_stat(
 
 def load_matches_and_players(
     years_offset: int = 2,
-) -> Tuple[List[Match], Dict[str, Player]]:
+) -> Tuple[list[Match], Dict[str, Player]]:
     """Load matches and players from a database."""
     logger.info("Loading matches and players from database...")
 
@@ -378,9 +407,9 @@ def load_matches_and_players(
 
 
 async def process_matches_async(
-    matches: List[Match],
+    matches: list[Match],
     player_id_to_player: Dict[str, Player],
-    ks: List[int],
+    ks: list[int],
     output_path: Path,
     async_db_url: str,
     override: bool,
@@ -391,20 +420,64 @@ async def process_matches_async(
 
     stats = []
     for match in tqdm(matches, desc="Processing matches", unit="match"):
-        stats.append(
-            await compute_one_match_stat(
-                match=match,
-                async_engine=async_engine,
-                player_id_to_player=player_id_to_player,
-                ks=ks,
-                output_dir=output_path,
-                override=override,
+        try:
+            stats.append(
+                await compute_one_match_stat(
+                    match=match,
+                    async_engine=async_engine,
+                    player_id_to_player=player_id_to_player,
+                    ks=ks,
+                    output_dir=output_path,
+                    override=override,
+                )
             )
-        )
+        except Exception as e:
+            logger.error(f"Error processing match {match}: {e}")
+            raise
 
     await async_engine.dispose()
 
     return stats
+
+
+def pack_all_jsons(output_path: Path):
+    chunk_size = 50000
+
+    json_files = list((output_path / "jsons").rglob("*.json"))
+    logger.info(f"Found {len(json_files)} JSON files to process.")
+
+    output_path = output_path / "chunks"
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    current_chunk = []
+    for i, file in tqdm(
+        enumerate(json_files),
+        desc="Packing JSON files",
+        unit="file",
+        total=len(json_files),
+    ):
+
+        with open(file, "r") as f:
+            data = json.load(f)
+
+        if i > 0 and i % chunk_size == 0:
+            df = pd.DataFrame(current_chunk)
+            df = df.to_parquet(output_path / f"chunk_{i // chunk_size}.parquet")
+            logger.info(
+                f"Saved chunk {i // chunk_size} with {len(current_chunk)} records."
+            )
+            current_chunk = [data]
+        else:
+            current_chunk.append(data)
+
+    if len(current_chunk) > 0:
+        df = pd.DataFrame(current_chunk)
+        df = df.to_parquet(output_path / f"chunk_last.parquet")
+        logger.info(f"Saved chunk last with {len(current_chunk)} records.")
+
+
+app = typer.Typer(help="Generate comprehensive tennis match statistics")
+
 
 @app.command(help="Generate comprehensive tennis match statistics.")
 def generate_stats(
@@ -464,6 +537,8 @@ def generate_stats(
 
     logger.info(f"✅ Successfully generated statistics for {len(all_matches)} matches")
     logger.info(f"📁 Output saved to: {output_path.absolute()}")
+
+    pack_all_jsons(output_path)
 
 
 if __name__ == "__main__":

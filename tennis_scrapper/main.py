@@ -4,12 +4,10 @@ import typer
 from loguru import logger
 from tqdm import tqdm
 
-from cli.fill_missing_data import app as fill_missing_data_app
 from cli.generate_stats import app as generate_stats_app
 from cli.scrap_all import app as scrap_all_app
 
 app = typer.Typer(pretty_exceptions_enable=False)
-app.add_typer(fill_missing_data_app)
 app.add_typer(generate_stats_app)
 app.add_typer(scrap_all_app)
 

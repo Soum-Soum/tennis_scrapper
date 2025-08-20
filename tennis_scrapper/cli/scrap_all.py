@@ -12,6 +12,8 @@ from scrap.matches import get_match_scrapping_tasks
 from scrap.tournaments import get_tournaments_scrapping_tasks
 from scrap.players import get_players_scrapping_tasks
 from scrap.rankings import get_ranking_scrapping_tasks, scrap_dates
+from data.add_rankings import add_rankings
+from data.add_elo import add_elo
 
 
 app = typer.Typer()
@@ -122,6 +124,8 @@ async def scrap_all_data(from_date: date, to_date: date):
             add_player_id_to_ranking_table(db_session)
             add_player_id_to_match_table(db_session)
             add_tournament_to_match_table(db_session)
+            add_rankings(db_session)
+            add_elo(db_session=db_session)
 
 
 @app.command(help="Scrape all data from Tennis Explorer and store it in the database.")

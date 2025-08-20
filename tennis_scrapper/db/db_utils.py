@@ -16,7 +16,7 @@ from sqlmodel import (
 from tqdm import tqdm
 
 from conf.config import settings
-from db.models import Tournament, Player
+from db.models import Match, Tournament, Player
 
 DB_PATH = settings.db_url
 
@@ -111,9 +111,10 @@ def insert_if_not_exists(
         ):
             insert_one_batch(instances[i : i + batch_size])
 
+
 def add_player_id_to_ranking_table(db_session: Session):
     logger.info("Adding player IDs to ranking table...")
-    
+
     UPDATE_RANKING_TABLE = """
         UPDATE ranking r
         SET player_id = p.player_id
@@ -124,7 +125,8 @@ def add_player_id_to_ranking_table(db_session: Session):
 
     db_session.exec(text(UPDATE_RANKING_TABLE))
     db_session.commit()
-    
+
+
 def add_player_id_to_match_table(db_session: Session):
     logger.info("Adding player IDs to match table...")
 
@@ -135,11 +137,12 @@ def add_player_id_to_match_table(db_session: Session):
         WHERE m.player_{k}_id IS NULL
         AND lower(trim(m.player_{k}_url_extension)) = lower(trim(p.url_extension));
     """
-    
+
     for k in [1, 2]:
         logger.info(f"Updating player {k} IDs in match table...")
         db_session.exec(text(UPDATE_MATCH_TABLE.format(k=k)))
         db_session.commit()
+
 
 def add_tournament_to_match_table(db_session: Session):
     logger.info("Adding tournament data to match table...")
@@ -149,8 +152,40 @@ def add_tournament_to_match_table(db_session: Session):
         SET tournament_id = t.tournament_id,
             surface = t.surface
         FROM tournament t
-        WHERE m.tournament_url_extension = t.url_extension;
+        WHERE m.tournament_id IS NULL
+        AND m.tournament_url_extension = t.url_extension;
     """
 
     db_session.exec(text(UPDATE_MATCH_TABLE))
+    db_session.commit()
+
+    match_without_tournament = db_session.exec(
+        select(Match).where(Match.tournament_id.is_(None))
+    ).all()
+
+    logger.info(
+        f"After adding tournament data, {len(match_without_tournament)} matches still have no tournament data."
+    )
+    defaults_tournament = db_session.exec(
+        text(
+            """
+        SELECT * FROM tournament WHERE name like '%DEFAULT%' 
+    """
+        )
+    )
+    logger.info(f"Found {defaults_tournament.rowcount} default tournaments.")
+    gender_year_to_tournament = {}
+
+    for tournament in defaults_tournament:
+        key = (tournament.players_gender, tournament.year)
+        gender_year_to_tournament[key] = tournament
+
+    for match in match_without_tournament:
+        key = (match.players_gender, match.date.year)
+        if key in gender_year_to_tournament:
+            tournament = gender_year_to_tournament[key]
+            match.tournament_id = tournament.tournament_id
+            match.surface = tournament.surface
+            db_session.add(match)
+
     db_session.commit()

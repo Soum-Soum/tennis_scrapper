@@ -186,7 +186,10 @@ class Match(BaseMatch, table=True):
     )
 
     __table_args__ = (
+        Index("idx_match_date", "date"),
         Index("idx_match_players_date", "player_1_id", "player_2_id", "date"),
+        Index("idx_match_p1_date", "player_1_id", "date"),
+        Index("idx_match_p2_date", "player_2_id", "date"),
     )
 
     def __init__(self, **kwargs):
@@ -218,6 +221,11 @@ class Ranking(HashedIDModel, table=True):
         foreign_key="player.player_id",
         nullable=True,
         description="Player ID for the ranking",
+    )
+
+    __table_args__ = (
+        # lookup rapide pour les updates
+        Index("idx_ranking_circuit_date_player", "circuit", "date", "player_id"),
     )
 
     def __init__(self, **kwargs):

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional, Any
+from typing import Iterable, List, Optional, Any, Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import (
@@ -14,7 +14,7 @@ import seaborn as sns
 from sklearn.calibration import calibration_curve
 
 
-def plot_roc_pr_curves(y_pred_list, y_true_list, labels=None, save_path=None):
+def plot_roc_pr_curves(y_pred_list, y_true_list, labels=None, save_path: Path = None):
 
     # Forcer en liste si données uniques
     if not isinstance(y_pred_list, list):
@@ -66,7 +66,7 @@ def plot_roc_pr_curves(y_pred_list, y_true_list, labels=None, save_path=None):
 
 
 def plot_confusion_matrix(
-    y_true: np.ndarray, y_pred: np.ndarray, labels=None, save_path=None
+    y_true: np.ndarray, y_pred: np.ndarray, labels=None, save_path: Path = None
 ):
 
     y_pred = y_pred.round().astype(int)
@@ -89,7 +89,9 @@ def plot_confusion_matrix(
         plt.show()
 
 
-def plot_calibration_curve(y_true, y_pred, n_bins=10, label=None, save_path=None):
+def plot_calibration_curve(
+    y_true, y_pred, n_bins=10, label=None, save_path: Path = None
+):
     prob_true, prob_pred = calibration_curve(
         y_true, y_pred, n_bins=n_bins, strategy="uniform"
     )
@@ -146,3 +148,64 @@ def save_all_plots(
             y_true_list[0], y_pred_list[0].round().astype(int), digits=4
         )
         f.write(report)
+
+
+def plot_feature_importances(
+    feature_importances: Iterable[float],
+    feature_names: Optional[Sequence[str]] = None,
+    top_k: int = 20,
+    save_path: Optional[str] = None,
+    title_top: str = "Top-K Feature Importances",
+    title_all: str = "All Feature Importances (sorted)",
+) -> None:
+    # -- Préparation des données
+    fi = np.asarray(list(feature_importances), dtype=float)
+    n_features = fi.shape[0]
+    if n_features == 0:
+        raise ValueError("feature_importances est vide.")
+
+    if feature_names is None:
+        feature_names = [f"f{i}" for i in range(n_features)]
+    else:
+        if len(feature_names) != n_features:
+            raise ValueError(
+                f"feature_names ({len(feature_names)}) doit avoir la même longueur "
+                f"que feature_importances ({n_features})."
+            )
+
+    # Tri décroissant
+    order = np.argsort(fi)[::-1]
+    fi_sorted = fi[order]
+    names_sorted = [feature_names[i] for i in order]
+
+    k = max(1, min(top_k, n_features))
+    top_vals = fi_sorted[:k]
+    top_names = names_sorted[:k]
+
+    # -- Figure & subplots
+    fig, (ax_top, ax_bottom) = plt.subplots(
+        2, 1, figsize=(12, 8), gridspec_kw={"height_ratios": [2, 1]}
+    )
+
+    # Graphe du haut : Top-K avec labels
+    ax_top.bar(range(k), top_vals)
+    ax_top.set_xticks(range(k))
+    ax_top.set_xticklabels(top_names, rotation=45, ha="right")
+    ax_top.set_ylabel("Importance")
+    ax_top.set_title(title_top)
+    ax_top.margins(x=0.01)
+
+    # Graphe du bas : All sorted sans labels en X
+    ax_bottom.bar(range(n_features), fi_sorted)
+    ax_bottom.set_xticks([])  # pas de labels en X
+    ax_bottom.set_ylabel("Importance")
+    ax_bottom.set_title(title_all)
+    ax_bottom.margins(x=0.01)
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, bbox_inches="tight", dpi=150)
+        plt.close(fig)
+    else:
+        plt.show()
