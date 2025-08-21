@@ -473,7 +473,7 @@ def pack_all_jsons(output_path: Path):
 
     if len(current_chunk) > 0:
         df = pd.DataFrame(current_chunk)
-        df = df.to_parquet(output_path / f"chunk_last.parquet")
+        df = df.to_parquet(output_path / "chunk_last.parquet")
         logger.info(f"Saved chunk last with {len(current_chunk)} records.")
 
 

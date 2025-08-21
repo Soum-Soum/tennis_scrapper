@@ -111,11 +111,11 @@ def get_ranking_scrapping_tasks(
 
     tasks = []
     for gender, dates in gender_to_dates.items():
-        for date in dates:
+        for current_date in dates:
             tasks.extend(
                 [
                     scrape_rankings_one_page(
-                        db_session, session, gender, date, page_index
+                        db_session, session, gender, current_date, page_index
                     )
                     for page_index in range(1, 50)
                 ]

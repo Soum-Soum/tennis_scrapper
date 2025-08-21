@@ -14,9 +14,9 @@ from textual.app import App, ComposeResult
 from textual import events
 from textual.containers import Horizontal
 from textual.widgets import Header, Footer, Input, Static, DataTable, Label
-from textual.reactive import reactive
 
 from db.db_utils import get_player_by_id
+from db.models import Match
 
 
 app_cli = typer.Typer(add_completion=False)
@@ -380,9 +380,6 @@ def compute_bets(
 
     df = pd.DataFrame(rows)
     return df
-
-
-from db.models import Match
 
 
 @app_cli.command()

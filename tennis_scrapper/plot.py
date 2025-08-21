@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Iterable, List, Optional, Any, Sequence
+from typing import Iterable, List, Optional, Sequence
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import (

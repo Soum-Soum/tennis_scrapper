@@ -2,7 +2,6 @@ import asyncio
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 import json
-from math import isfinite
 import math
 import tempfile
 from typing import Optional
@@ -410,10 +409,10 @@ def predict():
 
     all_incoming_matches = defaultdict(list)
     for gender in Gender:
-        for date in dates:
-            url = get_match_list_page_url(gender=gender, date=date)
+        for current_date in dates:
+            url = get_match_list_page_url(gender=gender, date=current_date)
             html = urlopen(url).read()
-            matches = incomming_match_from_html(html=html, date=date, gender=gender)
+            matches = incomming_match_from_html(html=html, date=current_date, gender=gender)
             all_incoming_matches[gender].extend(matches)
 
     match_with_data = defaultdict(list)

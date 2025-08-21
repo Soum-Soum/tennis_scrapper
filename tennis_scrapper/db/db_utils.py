@@ -18,7 +18,7 @@ from sqlmodel import (
 from tqdm import tqdm
 
 from conf.config import settings
-from db.models import Match, Surface, Tournament, Player
+from db.models import Match, Surface, Player
 
 DB_PATH = settings.db_url
 

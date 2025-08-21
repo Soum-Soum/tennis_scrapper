@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from catboost import CatBoostClassifier
 import joblib
 from loguru import logger
 import pandas as pd
@@ -8,7 +7,6 @@ import numpy as np
 from datetime import datetime
 from pydantic import BaseModel
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
 from typing import List, Tuple
 
 import typer
@@ -308,32 +306,6 @@ def train_model(
         top_k=20,
         save_path=plot_save_dir / "feature_importances.png",
     )
-
-    # mean_imp = fi_df["importance"].mean()
-    # logger.info(f"Mean feature importance: {mean_imp}")
-    # features_to_keep = fi_df[fi_df["importance"] > mean_imp]["feature"]
-    # logger.info(
-    #     f"Removing {len(X_train_scaled.columns) - len(features_to_keep)} features"
-    # )
-    # X_train_filtered = X_train_scaled[features_to_keep]
-    # X_val_filtered = X_val_scaled[features_to_keep]
-
-    # xgb_kwargs = {"n_estimators": 1200, "max_depth": 12, "min_child_weight": 15}
-    # model_2 = build_xgb(scale_pos_weight=spw, random_state=random_state, **xgb_kwargs)
-    # model_2.fit(
-    #     X_train_filtered,
-    #     y_train,
-    #     eval_set=[((X_train_filtered, y_train)), (X_val_filtered, y_val)],
-    #     verbose=100,
-    # )
-
-    # plot_save_dir_2 = base_dir / "plots_filtered"
-    # plot_save_dir_2.mkdir(parents=True, exist_ok=True)
-    # save_all_plots(
-    #     y_pred_list=[model_2.predict_proba(X_val_filtered)[:, 1]],
-    #     y_true_list=[y_val],
-    #     save_dir=plot_save_dir_2,
-    # )
 
 
 if __name__ == "__main__":

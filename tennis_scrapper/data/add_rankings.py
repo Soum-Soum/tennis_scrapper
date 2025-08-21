@@ -4,8 +4,7 @@ from loguru import logger
 from sqlmodel import Session, select, text
 from tqdm import tqdm
 
-from db.db_utils import engine
-from db.models import Match, Ranking, Gender
+from db.models import Ranking, Gender
 
 
 # def add_atp_points_to_matches(

@@ -133,7 +133,7 @@ def pair_to_match(
         player_1_url_extension = row1.find("td", class_="t-name").find("a")["href"]
         player_2_url_extension = row2.find("td", class_="t-name").find("a")["href"]
     except TypeError:
-        logger.warning(f"Unable to find player URLs -> skipping row")
+        logger.warning("Unable to find player URLs -> skipping row")
         return None
 
     player_1_odds, player_2_odds = scrap_odds(row1)
