@@ -12,7 +12,7 @@ from sqlmodel import Session
 from db.models import Gender, Match
 
 
-from scrap.urls import get_match_list_page_url
+from scrap.urls import get_match_result_list_page_url
 from utils.http_utils import async_get_with_retry
 
 
@@ -73,26 +73,30 @@ def get_row_id_to_tournament_url_ext(
 
 
 def get_row_pairs(trs: list) -> List[tuple]:
-    row_one = list(
-        filter(
-            lambda tr: tr.has_attr("id")
-            and tr["id"].startswith("r")
-            and not tr["id"].endswith("b"),
-            trs,
-        )
-    )
-    row_two_and_id = list(
-        filter(
-            lambda x: x[1].has_attr("id")
-            and x[1]["id"].startswith("r")
-            and x[1]["id"].endswith("b"),
-            enumerate(trs),
-        )
-    )
+    all_pairs = []
 
-    row_pairs = list(zip(row_one, row_two_and_id))
+    for letter in ["r", "s"]:
+        row_one = list(
+            filter(
+                lambda tr: tr.has_attr("id")
+                and tr["id"].startswith(letter)
+                and not tr["id"].endswith("b"),
+                trs,
+            )
+        )
+        row_two_and_id = list(
+            filter(
+                lambda x: x[1].has_attr("id")
+                and x[1]["id"].startswith(letter)
+                and x[1]["id"].endswith("b"),
+                enumerate(trs),
+            )
+        )
 
-    return row_pairs
+        row_pairs = list(zip(row_one, row_two_and_id))
+        all_pairs.extend(row_pairs)
+
+    return all_pairs
 
 
 def scrap_odds(row1) -> tuple[Optional[float], Optional[float]]:
@@ -148,13 +152,9 @@ def pair_to_match(
     )
 
 
-def match_data_set_from_html(
-    html: str, date: datetime.date, gender: Gender
+def extract_matches_from_table(
+    table: BeautifulSoup, date: datetime.date, gender: Gender
 ) -> set[Match]:
-    soup = BeautifulSoup(html, "lxml")
-
-    table = soup.find("table", class_="result")
-
     trs = table.find_all("tr")
 
     row_id_to_tournament_url = get_row_id_to_tournament_url_ext(
@@ -182,29 +182,38 @@ def match_data_set_from_html(
     return matches
 
 
+def match_data_set_from_html(
+    html: str, date: datetime.date, gender: Gender
+) -> set[Match]:
+    soup = BeautifulSoup(html, "lxml")
+
+    table = soup.find("table", class_="result")
+
+    return extract_matches_from_table(table, date, gender)
+
+
 async def scrap_match_data(
     db_session: Session,
     html_session: aiohttp.ClientSession,
     gender: Gender,
     date: datetime.date,
 ) -> None:
-    url = get_match_list_page_url(gender, date)
+    url = get_match_result_list_page_url(gender, date)
     html = await async_get_with_retry(
         html_session, url, headers={"Accept": "text/html"}
     )
     if html is None:
         logger.error(f"Failed to fetch match data from {url}")
         return
-    
+
     matches = match_data_set_from_html(html, date, gender)
-    
 
     if len(set([m.match_id for m in matches])) != len(matches):
         logger.error(f"Duplicate match IDs found @ {url}")
         id_to_count = defaultdict(int)
         for m in matches:
             id_to_count[m.match_id] += 1
-        
+
         matches = list(filter(lambda m: id_to_count[m.match_id] == 1, matches))
         if not matches:
             return

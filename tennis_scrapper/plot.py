@@ -90,23 +90,42 @@ def plot_confusion_matrix(
 
 
 def plot_calibration_curve(
-    y_true, y_pred, n_bins=10, label=None, save_path: Path = None
+    y_true, y_pred, n_bins=10, label="Model", save_path: Path = None
 ):
-    prob_true, prob_pred = calibration_curve(
+    fig, (ax_cal, ax_hist) = plt.subplots(2, 1, figsize=(7, 10), gridspec_kw={"height_ratios": [2, 1]})
+
+    # Courbe calibration - uniform
+    prob_true_u, prob_pred_u = calibration_curve(
         y_true, y_pred, n_bins=n_bins, strategy="uniform"
     )
+    ax_cal.plot(prob_pred_u, prob_true_u, "o-", label=f"{label} (uniform)")
 
-    plt.figure(figsize=(8, 8))
-    plt.plot(prob_pred, prob_true, marker="o", label=label or "Model")
-    plt.plot([0, 1], [0, 1], linestyle="--", color="gray", label="Perfectly calibrated")
-    plt.xlabel("Probabilité prédite")
-    plt.ylabel("Probabilité réelle")
-    plt.title("Courbe de calibration")
-    plt.legend()
-    plt.grid()
+    # Courbe calibration - quantile
+    prob_true_q, prob_pred_q = calibration_curve(
+        y_true, y_pred, n_bins=n_bins, strategy="quantile"
+    )
+    ax_cal.plot(prob_pred_q, prob_true_q, "s-", label=f"{label} (quantile)")
+
+    # Ligne parfaite
+    ax_cal.plot([0, 1], [0, 1], "k--", label="Perfectly calibrated")
+
+    ax_cal.set_xlabel("Probabilité prédite")
+    ax_cal.set_ylabel("Probabilité observée")
+    ax_cal.set_title("Courbes de calibration")
+    ax_cal.legend()
+    ax_cal.grid(True)
+
+    # Histogramme des proba prédites
+    ax_hist.hist(y_pred, bins=n_bins, range=(0, 1), edgecolor="black")
+    ax_hist.set_xlabel("Probabilité prédite")
+    ax_hist.set_ylabel("Fréquence")
+    ax_hist.set_title("Distribution des probabilités")
+
+    plt.tight_layout()
+
     if save_path:
-        plt.savefig(save_path)
-        plt.close()
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
     else:
         plt.show()
 

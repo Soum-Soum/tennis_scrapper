@@ -1,7 +1,7 @@
 import datetime
 import hashlib
 from enum import StrEnum
-from typing import Self, List
+from typing import Optional, Self
 
 from sqlmodel import Field, SQLModel, Index
 
@@ -164,22 +164,22 @@ class Match(BaseMatch, table=True):
         nullable=True,
         description="Elo rating of player 2 on the match surface before the match",
     )
-    atp_ranking_player_1: int = Field(
+    atp_ranking_player_1: Optional[int] = Field(
         default=None,
         nullable=True,
         description="ATP ranking of player 1 before the match",
     )
-    atp_points_player_1: float = Field(
+    atp_points_player_1: Optional[float] = Field(
         default=None,
         nullable=True,
         description="ATP points of player 1 before the match",
     )
-    atp_ranking_player_2: int = Field(
+    atp_ranking_player_2: Optional[int] = Field(
         default=None,
         nullable=True,
         description="ATP ranking of player 2 before the match",
     )
-    atp_points_player_2: float = Field(
+    atp_points_player_2: Optional[float] = Field(
         default=None,
         nullable=True,
         description="ATP points of player 2 before the match",
@@ -225,6 +225,7 @@ class Ranking(HashedIDModel, table=True):
 
     __table_args__ = (
         # lookup rapide pour les updates
+        Index("idx_ranking_circuit_date", "circuit", "date"),
         Index("idx_ranking_circuit_date_player", "circuit", "date", "player_id"),
     )
 

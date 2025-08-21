@@ -185,22 +185,6 @@ def build_xgb(
     return XGBClassifier(**defaults)
 
 
-# def build_catboost(
-#     random_state: int = 42,
-#     **kwargs,
-# ) -> CatBoostClassifier:
-#     """Instantiate a CatBoostClassifier with sensible defaults; kwargs override them."""
-#     defaults = dict(
-#         iterations=2000,
-#         depth=6,
-#         learning_rate=0.05,
-#         random_state=random_state,
-#         verbose=100,
-#     )
-#     defaults.update(kwargs)
-#     return CatBoostClassifier(**defaults)
-
-
 def save_dfs_for_cache(
     X_train: pd.DataFrame,
     X_val: pd.DataFrame,
@@ -211,6 +195,7 @@ def save_dfs_for_cache(
     X_val_scaled: pd.DataFrame,
     save_dir: Path,
 ):
+    save_dir.mkdir(parents=True, exist_ok=True)
     X_train.to_parquet(save_dir / "X_train.parquet")
     X_val.to_parquet(save_dir / "X_val.parquet")
     pd.DataFrame(y_train).to_parquet(save_dir / "y_train.parquet")

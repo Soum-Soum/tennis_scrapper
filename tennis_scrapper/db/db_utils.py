@@ -1,3 +1,4 @@
+from datetime import date
 import sys
 from typing import Type, TypeVar, Optional
 
@@ -9,6 +10,7 @@ from sqlmodel import (
     create_engine,
     Session,
     inspect,
+    or_,
     select,
     delete,
     text,
@@ -16,7 +18,7 @@ from sqlmodel import (
 from tqdm import tqdm
 
 from conf.config import settings
-from db.models import Match, Tournament, Player
+from db.models import Match, Surface, Tournament, Player
 
 DB_PATH = settings.db_url
 
@@ -189,3 +191,36 @@ def add_tournament_to_match_table(db_session: Session):
             db_session.add(match)
 
     db_session.commit()
+
+
+def get_one_player_matches(
+    db_session: Session,
+    player_id: str,
+    date: Optional[date] = None,
+    surface: Optional[Surface] = None,
+    limit: Optional[int] = None,
+) -> list[Match]:
+
+    statement = select(Match).where(
+        or_(Match.player_1_id == player_id, Match.player_2_id == player_id),
+    )
+    if date:
+        statement = statement.where(Match.date < date)
+    if surface:
+        statement = statement.where(Match.surface == surface)
+
+    statement = statement.order_by(Match.date.desc())
+
+    if limit:
+        statement = statement.limit(limit)
+
+    return db_session.exec(statement).all()
+
+
+def get_player_by_id(player_id: str) -> Optional[Player]:
+    """Get a player by ID."""
+    with Session(get_engine()) as session:
+        player = session.exec(
+            select(Player).where(Player.player_id == player_id)
+        ).first()
+        return player

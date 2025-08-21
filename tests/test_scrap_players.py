@@ -2,8 +2,8 @@ from datetime import datetime
 from urllib.request import urlopen
 import pytest
 
-from db.models import Gender
-from scrap.players import player_from_html
+from tennis_scrapper.db.models import Gender
+from tennis_scrapper.scrap.players import player_from_html
 
 
 @pytest.fixture

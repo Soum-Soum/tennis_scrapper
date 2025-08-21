@@ -1,8 +1,8 @@
 from urllib.request import urlopen
 import pytest
 
-from scrap.tournaments import tournaments_from_html
-from db.models import Gender, Surface
+from tennis_scrapper.scrap.tournaments import tournaments_from_html
+from tennis_scrapper.db.models import Gender, Surface
 
 
 @pytest.fixture

@@ -47,6 +47,9 @@ async def scrap_dates(
             unit="page",
         )
         dates = sum(dates_lists, [])
+        logger.info(
+            f"Found {len(dates)} rankings dates for {gender} {from_date.year}-{to_date.year}"
+        )
         gender_to_dates[gender] = dates
 
     return gender_to_dates
@@ -85,17 +88,25 @@ def rankings_from_html(
 
 
 async def scrape_rankings_one_page(
-    db_session: Session, html_session: aiohttp.ClientSession, gender: Gender, date: date, page_index: int
+    db_session: Session,
+    html_session: aiohttp.ClientSession,
+    gender: Gender,
+    date: date,
+    page_index: int,
 ) -> None:
     url = get_ranking_url(gender, date, page_index=page_index)
-    html = await async_get_with_retry(html_session, url, headers={"Accept": "text/html"})
+    html = await async_get_with_retry(
+        html_session, url, headers={"Accept": "text/html"}
+    )
     all_rankings = rankings_from_html(html, gender, date)
 
     insert_if_not_exists(db_session, table=Ranking, instances=all_rankings)
 
 
 def get_ranking_scrapping_tasks(
-    db_session: Session, session: aiohttp.ClientSession, gender_to_dates: dict[Gender, list[date]]
+    db_session: Session,
+    session: aiohttp.ClientSession,
+    gender_to_dates: dict[Gender, list[date]],
 ) -> list[Coroutine[Any, Any, None]]:
 
     tasks = []
@@ -103,7 +114,9 @@ def get_ranking_scrapping_tasks(
         for date in dates:
             tasks.extend(
                 [
-                    scrape_rankings_one_page(db_session,session, gender, date, page_index)
+                    scrape_rankings_one_page(
+                        db_session, session, gender, date, page_index
+                    )
                     for page_index in range(1, 50)
                 ]
             )

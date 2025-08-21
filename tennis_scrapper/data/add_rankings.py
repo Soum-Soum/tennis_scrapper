@@ -88,7 +88,7 @@ ADD_ATP = """
         AND m.date >= :start_date AND m.date < :end_date
         AND m.atp_ranking_player_{k} IS NULL
         AND r.circuit = :circuit
-        AND r.date    = :end_date
+        AND r.date    = :start_date
         AND r.player_id = m.player_{k}_id
 """
 

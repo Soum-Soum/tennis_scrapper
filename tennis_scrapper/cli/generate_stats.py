@@ -45,6 +45,7 @@ async def get_player_history_at_dt(
     db_session: AsyncSession,
 ) -> tuple[list[Match], list[Match]]:
     """Get player's match history up to a specific date."""
+    # TODO replace by get_one_player_matches when all sessions will be async
     result = await db_session.exec(
         select(Match)
         .where(
