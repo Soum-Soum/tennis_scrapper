@@ -2,7 +2,6 @@ import asyncio
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 import json
-import math
 import tempfile
 from typing import Optional
 from urllib.request import urlopen
@@ -15,19 +14,16 @@ from sqlmodel import Session, select
 from tqdm import tqdm
 import typer
 from xgboost import XGBClassifier
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich import box
 
 from conf.config import settings
 from cli.generate_stats import get_elo, process_matches_async
 from data.add_elo import K, compute_elo
-from db.db_utils import get_engine, get_one_player_matches, get_player_by_id, get_table
+from db.db_utils import get_engine, get_one_player_matches, get_table
 from db.models import Gender, Match, Player, Ranking, Surface, Tournament
 from scrap.matches import extract_matches_from_table
 from scrap.urls import get_match_list_page_url
-from train import ColsData, compute_diff_columns, validate_cols
+from tennis_scrapper.ml.preprocess_data import ColsData
+from tennis_scrapper.ml.preprocess_data import compute_diff_columns
 
 
 def incomming_match_from_html(html: str, date: date, gender: Gender) -> list[Match]:
@@ -196,207 +192,6 @@ async def compute_x_test(matches: list[Match]) -> pd.DataFrame:
     return pd.DataFrame(X_test)
 
 
-def kelly_criterion(p: float, odds: float) -> float:
-    if not (0.0 <= p <= 1.0) or odds <= 1.0:
-        return 0.0
-    b = odds - 1.0
-    return max(0.0, (p * b - (1 - p)) / b)
-
-
-def pretty_print_bets(
-    matches: list[Match],
-    probas: list[float],
-    max_bet_fraction: float,
-    bankroll: float,
-) -> pd.DataFrame:
-    """
-    Build and display a betting recommendation table from model probabilities.
-
-    Assumptions:
-      - `probas` is the model P(player_2 wins), in [0, 1].
-      - If proba < 0.5 -> predict player_1; else predict player_2.
-      - Uses capped Kelly criterion with cap = `max_bet_fraction`.
-
-    Returns:
-      - A pandas DataFrame with one row per match containing:
-        date, players, odds, predicted side, model probability for that side,
-        implied probability (from odds), edge, Kelly%, stake%, stake €, EV%.
-
-    Notes:
-      - If an odd is missing/invalid (<= 1), the recommendation is PASS.
-      - “EV%” is the expected profit per euro staked: (p * odds - 1) * 100.
-    """
-    if len(matches) != len(probas):
-        raise ValueError(
-            f"Length mismatch: matches={len(matches)} vs probas={len(probas)}"
-        )
-
-    rows = []
-    for match, p2 in zip(matches, probas):
-        # Players
-        p1_player = get_player_by_id(match.player_1_id)
-        p2_player = get_player_by_id(match.player_2_id)
-
-        # Prediction side & corresponding probability/odds
-        pred_p2 = int(round(p2))  # 0->P1, 1->P2
-        if pred_p2 == 0:
-            predicted_player = p1_player
-            p_win = 1.0 - p2
-            odd = match.player_1_odds
-            side = "P1"
-        else:
-            predicted_player = p2_player
-            p_win = float(p2)
-            odd = match.player_2_odds
-            side = "P2"
-
-        # Guard against missing/invalid odds
-        valid_odd = isinstance(odd, (int, float)) and odd is not None and odd > 1.0
-
-        implied = (1.0 / odd) if valid_odd else math.nan
-        edge = (p_win - implied) if valid_odd else math.nan
-
-        # Kelly (net odds b = odd-1). If invalid odds, kelly=0.
-        if valid_odd:
-            kelly_frac = kelly_criterion(p_win, odd)  # assumed to max(0, ...)
-        else:
-            kelly_frac = 0.0
-
-        stake_frac = min(kelly_frac, max_bet_fraction)
-        stake_eur = bankroll * stake_frac
-
-        # Expected value (per € staked): profit EV = p*odd - 1
-        ev = (p_win * odd - 1.0) if valid_odd else math.nan
-
-        decision = "💰 BET" if kelly_frac > 0 else "⏸️ PASS"
-
-        # A tiny confidence meter: proportion of cap used (0..5 dots)
-        conf_steps = 5
-        conf_level = (
-            0
-            if max_bet_fraction <= 0
-            else round((stake_frac / max_bet_fraction) * conf_steps)
-        )
-        conf_level = max(0, min(conf_steps, conf_level))
-        confidence = "▪" * conf_level + "·" * (conf_steps - conf_level)  # ▪▪▪··
-
-        rows.append(
-            {
-                "Players": f"{p1_player.name} vs {p2_player.name}",
-                "Predicted Winner": f"{predicted_player.name}({side})",
-                "Odds": odd if valid_odd else None,
-                "Model p(win)": round(p_win, 3),
-                "Implied p": round(implied, 3) if valid_odd else None,
-                "Edge %": round(100 * edge, 1) if valid_odd else None,
-                "Kelly %": round(100 * kelly_frac, 2),
-                "Stake %": round(100 * stake_frac, 2),
-                "Stake €": round(stake_eur, 2),
-                "EV %": round(100 * ev, 2) if valid_odd else None,
-                "Decision": decision,
-                "Conf": confidence,  # visual hint, 5 steps
-            }
-        )
-
-    df = pd.DataFrame(rows)
-
-    # Sort: BETs first, then by highest expected value / stake
-    def sort_key(row):
-        is_bet = row["Decision"].startswith("💰")
-        ev = row["EV %"] if pd.notna(row["EV %"]) else -1e9
-        stake = row["Stake €"] if pd.notna(row["Stake €"]) else 0.0
-        return (not is_bet, -ev, -stake)
-
-    if not df.empty:
-        df = df.sort_values(
-            by=["Decision", "EV %", "Stake €"],
-            ascending=[True, False, False],
-            key=lambda s: s,  # keep default; we’ll rely on custom printing sort below if needed
-        )
-
-    # Pretty terminal output with rich (fallback to plain DataFrame)
-    console = Console()
-    table = Table(
-        title="🏆 Betting Recommendations",
-        box=box.SIMPLE_HEAVY,
-        expand=True,
-        show_lines=False,
-    )
-
-    cols = [
-        "Players",
-        "Predicted Winner",
-        "Odds",
-        "Model p(win)",
-        "Implied p",
-        "Edge %",
-        "Kelly %",
-        "Stake %",
-        "Stake €",
-        "EV %",
-        "Decision",
-        "Conf",
-    ]
-    just = {
-        "Players": "left",
-        "Predicted Winner": "left",
-        "Odds": "right",
-        "Model p(win)": "right",
-        "Implied p": "right",
-        "Edge %": "right",
-        "Kelly %": "right",
-        "Stake %": "right",
-        "Stake €": "right",
-        "EV %": "right",
-        "Decision": "center",
-        "Conf": "center",
-    }
-    for c in cols:
-        table.add_column(c, justify=just[c], no_wrap=(c in {"Players", "Side"}))
-
-    # Add rows with light conditional coloring
-    for _, r in df.iterrows():
-        style = "green" if r["Decision"].startswith("💰") else "bright_black"
-        table.add_row(
-            str(r["Players"]),
-            str(r["Predicted Winner"]),
-            f"{r['Odds']:.2f}" if pd.notna(r["Odds"]) else "-",
-            f"{r['Model p(win)']:.3f}" if pd.notna(r["Model p(win)"]) else "-",
-            f"{r['Implied p']:.3f}" if pd.notna(r["Implied p"]) else "-",
-            f"{r['Edge %']:.1f}" if pd.notna(r["Edge %"]) else "-",
-            f"{r['Kelly %']:.2f}",
-            f"{r['Stake %']:.2f}",
-            f"{r['Stake €']:.2f}",
-            f"{r['EV %']:.2f}" if pd.notna(r["EV %"]) else "-",
-            r["Decision"],
-            r["Conf"],
-            style=style,
-        )
-
-    # Summary panel
-    bets = df[df["Decision"].str.startswith("💰")] if not df.empty else df
-    total_stake = float(bets["Stake €"].sum()) if not bets.empty else 0.0
-    exp_profit = 0.0
-    for _, r in bets.iterrows():
-        ev_pct = r["EV %"]
-        stake_eur = r["Stake €"]
-        if pd.notna(ev_pct) and pd.notna(stake_eur):
-            exp_profit += stake_eur * (ev_pct / 100.0)
-    roi = (exp_profit / total_stake * 100.0) if total_stake > 0 else 0.0
-
-    console.print(table)
-    console.print(
-        Panel.fit(
-            f"💸 Total stake: [bold]{total_stake:.2f} €[/bold]   "
-            f"📈 Expected profit: [bold]{exp_profit:.2f} €[/bold]   "
-            f"📊 Expected ROI: [bold]{roi:.2f}%[/bold]",
-            border_style="cyan",
-            title="Summary",
-        )
-    )
-
-    return df
-
-
 app = typer.Typer()
 
 
@@ -436,7 +231,7 @@ def predict():
         cols_data = ColsData.model_validate(json.load(f))
 
     X_test = compute_diff_columns(X_test)
-    X_test = validate_cols(X_test, cols_data)
+    X_test = cols_data.validate_cols(X_test)
 
     X_test = X_test.drop(columns=cols_data.categorical)
     X_test = X_test.drop(columns=cols_data.other)
@@ -471,9 +266,6 @@ def predict():
         prediction_file,
         index=False,
     )
-
-    pretty_print_bets(matches, probas, max_bet_fraction=0.05, bankroll=1000.0)
-
 
 if __name__ == "__main__":
     app()
