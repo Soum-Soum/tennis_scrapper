@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from datetime import date
 import sys
 from typing import Type, TypeVar, Optional
@@ -18,7 +19,7 @@ from sqlmodel import (
 from tqdm import tqdm
 
 from conf.config import settings
-from db.models import Match, Surface, Player
+from db.models import Match, Surface, Player, Tournament
 
 DB_PATH = settings.db_url
 
@@ -38,10 +39,10 @@ def create_db_and_tables():
     return engine
 
 
-def get_session(engine=None):
-    if engine is None:
-        engine = get_engine()
-    return Session(engine)
+# def get_session(engine=None):
+#     if engine is None:
+#         engine = get_engine()
+#     return Session(engine)
 
 
 engine = get_engine()
@@ -193,34 +194,58 @@ def add_tournament_to_match_table(db_session: Session):
     db_session.commit()
 
 
-def get_one_player_matches(
-    db_session: Session,
-    player_id: str,
-    date: Optional[date] = None,
-    surface: Optional[Surface] = None,
-    limit: Optional[int] = None,
-) -> list[Match]:
-
-    statement = select(Match).where(
-        or_(Match.player_1_id == player_id, Match.player_2_id == player_id),
-    )
-    if date:
-        statement = statement.where(Match.date < date)
-    if surface:
-        statement = statement.where(Match.surface == surface)
-
-    statement = statement.order_by(Match.date.desc())
-
-    if limit:
-        statement = statement.limit(limit)
-
-    return db_session.exec(statement).all()
 
 
-def get_player_by_id(player_id: str) -> Optional[Player]:
+@contextmanager
+def get_session(existing_session: Optional[Session] = None):
+    if existing_session is not None:
+        yield existing_session
+    else:
+        with Session(get_engine()) as session:
+            yield session
+
+def get_player_by_id(player_id: str, db_session: Optional[Session]=None) -> Optional[Player]:
     """Get a player by ID."""
-    with Session(get_engine()) as session:
+    with get_session(db_session) as session:
         player = session.exec(
             select(Player).where(Player.player_id == player_id)
         ).first()
         return player
+
+def get_one_player_matches(
+    player_id: str,
+    date: Optional[date] = None,
+    surface: Optional[Surface] = None,
+    limit: Optional[int] = None,
+    db_session: Optional[Session]=None,
+) -> list[Match]:
+
+    with get_session(db_session) as db_session:
+        statement = select(Match).where(
+            or_(Match.player_1_id == player_id, Match.player_2_id == player_id),
+        )
+        if date:
+            statement = statement.where(Match.date < date)
+        if surface:
+            statement = statement.where(Match.surface == surface)
+
+        statement = statement.order_by(Match.date.desc())
+
+        if limit:
+            statement = statement.limit(limit)
+
+        return db_session.exec(statement).all()
+
+def get_player_by_url_extension(url_extension: str, db_session: Optional[Session]=None) -> Player:
+    with get_session(db_session) as session:
+        statement = select(Player).where(Player.url_extension == url_extension)
+        player = session.exec(statement).first()
+        if player is None:
+            raise ValueError(f"Player with url extension {url_extension} not found")
+        return player
+    
+def get_tournament_by_url(url: str, db_session: Optional[Session]=None) -> Optional[Tournament]:
+    with get_session(db_session) as db_session:
+        return db_session.exec(
+            select(Tournament).where(Tournament.url_extension == url)
+        ).first()

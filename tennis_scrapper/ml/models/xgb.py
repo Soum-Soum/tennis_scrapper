@@ -32,14 +32,14 @@ class XgbClassifierWrapper:
     def __init__(self, model: XGBClassifier):
         self.model = model
    
-    def feature_importance(self, X_train: pd.DataFrame) -> pd.DataFrame:
+    def feature_importance(self) -> pd.DataFrame:
+        booster = self.model.get_booster()
         importances = self.model.feature_importances_
-        feat_importance_df = (
-            pd.DataFrame({"feature": X_train.columns, "importance": importances})
+        return (
+            pd.DataFrame({"feature": booster.feature_names, "importance": importances})
             .sort_values(by="importance", ascending=False)
             .reset_index(drop=True)
         )
-        return feat_importance_df
 
     def save_model(self, save_path: Path) -> None:
         save_path.parent.mkdir(parents=True, exist_ok=True)

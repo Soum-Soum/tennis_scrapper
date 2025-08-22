@@ -16,14 +16,15 @@ import typer
 from xgboost import XGBClassifier
 
 from conf.config import settings
-from cli.generate_stats import get_elo, process_matches_async
+from cli.generate_stats import process_matches_async
 from data.add_elo import K, compute_elo
-from db.db_utils import get_engine, get_one_player_matches, get_table
+from db.db_utils import get_engine, get_one_player_matches, get_player_by_url_extension, get_table, get_tournament_by_url
 from db.models import Gender, Match, Player, Ranking, Surface, Tournament
 from scrap.matches import extract_matches_from_table
 from scrap.urls import get_match_list_page_url
-from tennis_scrapper.ml.preprocess_data import ColsData
-from tennis_scrapper.ml.preprocess_data import compute_diff_columns
+from ml.preprocess_data import ColsData, preprocess_dataframe_predict, preprocess_dataframe_predict, compute_diff_columns
+from ml.models.xgb import XgbClassifierWrapper
+from tennis_scrapper.stats.stats_utils import get_elo
 
 
 def incomming_match_from_html(html: str, date: date, gender: Gender) -> list[Match]:
@@ -55,18 +56,10 @@ def incomming_match_from_html(html: str, date: date, gender: Gender) -> list[Mat
 
 
 def add_player_to_match(match: Match, db_session: Session) -> Match:
-    def get_player_by_url_extension(url_extension: str) -> Player:
-        statement = select(Player).where(Player.url_extension == url_extension)
-        player = db_session.exec(statement).first()
-        if player is None:
-            raise ValueError(f"Player with url extension {url_extension} not found")
-        return player
-
-    player_1 = get_player_by_url_extension(match.player_1_url_extension)
-    player_2 = get_player_by_url_extension(match.player_2_url_extension)
+    player_1 = get_player_by_url_extension(match.player_1_url_extension, db_session=db_session)
+    player_2 = get_player_by_url_extension(match.player_2_url_extension, db_session=db_session)
     match.player_1_id = player_1.player_id
     match.player_2_id = player_2.player_id
-
     return match
 
 
@@ -98,12 +91,6 @@ def get_player_id_to_ranking(db_session: Session) -> dict[str, Ranking]:
 
 
 def add_tournament_data_to_match(match: Match, db_session: Session) -> Match:
-
-    def get_tournament_by_url(url: str) -> Optional[Tournament]:
-        return db_session.exec(
-            select(Tournament).where(Tournament.url_extension == url)
-        ).first()
-
     tournament = get_tournament_by_url(match.tournament_url_extension)
     assert (
         tournament is not None
@@ -111,7 +98,6 @@ def add_tournament_data_to_match(match: Match, db_session: Session) -> Match:
 
     match.tournament_id = tournament.tournament_id
     match.surface = tournament.surface
-
     return match
 
 
@@ -230,27 +216,18 @@ def predict():
     with open("/home/pierre/dev/tennis_scrapper/resources/cols_data.json") as f:
         cols_data = ColsData.model_validate(json.load(f))
 
-    X_test = compute_diff_columns(X_test)
-    X_test = cols_data.validate_cols(X_test)
-
-    X_test = X_test.drop(columns=cols_data.categorical)
-    X_test = X_test.drop(columns=cols_data.other)
-    X_test = X_test.drop(columns=cols_data.date_column)
-
-    model_loaded = XGBClassifier()
-    model_loaded.load_model(
-        "/home/pierre/dev/tennis_scrapper/output3/model/classifier.json"
-    )
     scaler = joblib.load("/home/pierre/dev/tennis_scrapper/output3/data/scaler.pkl")
+    X_test_preprocessed = preprocess_dataframe_predict(X_df=X_test, cols_data=cols_data, scaler=scaler)
 
-    X_test_scaled = X_test.copy()
-    X_test_scaled = X_test_scaled.reindex(columns=model_loaded.feature_names_in_)
-    X_test_scaled[cols_data.numerical] = scaler.transform(X_test[cols_data.numerical])
+    model_wrapper = XgbClassifierWrapper.from_model("/home/pierre/dev/tennis_scrapper/output3/model/classifier.json")
 
-    probas = model_loaded.predict_proba(X_test_scaled)[:, 1]
+    X_test_preprocessed = X_test_preprocessed.reindex(columns=model_wrapper.model.get_booster().feature_names)
+    X_test_preprocessed[cols_data.numerical] = scaler.transform(X_test[cols_data.numerical])
 
-    X_test["proba"] = probas
-    X_test["predicted"] = X_test["proba"].round().astype(int)
+    predictions_df = model_wrapper.predict(X_test_preprocessed)
+
+    X_test["proba"] = predictions_df["predicted_proba"]
+    X_test["predicted"] = predictions_df["predicted_class"]
 
     prediction_path = Path(f"predictions/{datetime.now().strftime('%Y-%m-%d')}")
     prediction_path.mkdir(parents=True, exist_ok=True)

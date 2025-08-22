@@ -2,9 +2,8 @@ import asyncio
 import datetime
 import json
 from pathlib import Path
-from typing import Optional, Dict, Tuple, Any
+from typing import Optional, Dict, Tuple
 
-import numpy as np
 import pandas as pd
 import typer
 from loguru import logger
@@ -16,15 +15,8 @@ from tqdm.asyncio import tqdm
 from conf.config import settings
 from db.db_utils import engine
 from db.models import Match, Player, Surface
-
-
-def get_player_by_name(name: str) -> Optional[Player]:
-    """Get a player by name using fuzzy matching."""
-    with Session(engine) as session:
-        player = session.exec(
-            select(Player).where(Player.name.like(f"%{name}%"))
-        ).first()
-        return player
+from tennis_scrapper.stats.compute_stats import compute_match_played_stats, compute_h2h_stats, compute_player_match_based_stats
+from tennis_scrapper.stats.stats_utils import compute_player_age
 
 
 def is_match_valid(match: Match) -> bool:
@@ -76,7 +68,7 @@ async def get_h2h_matches(
     db_session: AsyncSession,
 ) -> list[Match]:
     """Get head-to-head matches between two players."""
-    result = await db_session.exec(
+    matches = await db_session.exec(
         select(Match)
         .where(
             or_(Match.player_1_id == player_1_id, Match.player_2_id == player_1_id),
@@ -84,84 +76,9 @@ async def get_h2h_matches(
             Match.date < match_date,
         )
         .order_by(Match.date)
-    )
-    matches = result.all()
+    ).all()
     matches = list(filter(is_match_valid, matches))
     return sorted(matches, key=lambda x: x.date)
-
-
-def is_winner(match: Match, player_id: str) -> bool:
-    """Check if a player won a match."""
-    return match.player_1_id == player_id
-
-
-def parse_score(score: str) -> list[tuple[int, int]]:
-    """Parse tennis score string into list of set scores."""
-    score_list = []
-    sets = score.split()
-    for current_set in sets:
-        games_winner, games_loser = current_set.split("-")
-        score_list.append((int(games_winner), int(games_loser)))
-    return score_list
-
-
-def get_games_won(match: Match, player_id: str) -> list[int]:
-    """Get games won by player in each set."""
-    parsed_score = parse_score(match.score)
-    if is_winner(match, player_id):
-        return [games[0] for games in parsed_score]
-    else:
-        return [games[1] for games in parsed_score]
-
-
-def get_games_conceded(match: Match, player_id: str) -> list[int]:
-    """Get games conceded by player in each set."""
-    parsed_score = parse_score(match.score)
-    if is_winner(match, player_id):
-        return [games[1] for games in parsed_score]
-    else:
-        return [games[0] for games in parsed_score]
-
-
-def get_elo(match: Match, player_id: str) -> float:
-    """Get player's ELO rating for a match."""
-    if match.player_1_id == player_id:
-        return match.player_1_elo
-    elif match.player_2_id == player_id:
-        return match.player_2_elo
-    else:
-        raise ValueError(f"Player {player_id} not found in match {match.id}")
-
-
-def get_opponent_elo(match: Match, player_id: str) -> float:
-    """Get opponent's ELO rating for a match."""
-    if match.player_1_id == player_id:
-        return match.player_2_elo
-    elif match.player_2_id == player_id:
-        return match.player_1_elo
-    else:
-        raise ValueError(f"Player {player_id} not found in match {match.id}")
-
-
-def compute_opponent_elo_stat(
-    selected_matches: list[Match], player_id: str
-) -> Tuple[float, float]:
-    opponent_elo_winnig_match = []
-    opponent_elo_losing_match = []
-
-    for match in selected_matches:
-        opponent_elo = get_opponent_elo(match, player_id)
-        if opponent_elo is None:
-            continue
-
-        if is_winner(match, player_id):
-            opponent_elo_winnig_match.append(opponent_elo)
-        else:
-            opponent_elo_losing_match.append(opponent_elo)
-
-    return safe_mean(np.array(opponent_elo_winnig_match)), safe_mean(
-        np.array(opponent_elo_losing_match)
-    )
 
 
 def is_match_sorted(matches: list[Match]) -> bool:
@@ -169,104 +86,40 @@ def is_match_sorted(matches: list[Match]) -> bool:
     return all(matches[i].date <= matches[i + 1].date for i in range(len(matches) - 1))
 
 
-def safe_mean(arr, default=0.0):
-    if not isinstance(arr, np.ndarray):
-        arr = np.array(arr)
-    return np.mean(arr).item() if arr.size > 0 else default
+def add_key_prefix_suffix(d: dict, prefix: str = "", suffix: str = "") -> dict:
+    if prefix != "" and not prefix.endswith("_"):
+        prefix += "_"
 
+    if suffix != "" and not suffix.startswith("_"):
+        suffix = "_" + suffix
+        
+    return {f"{prefix}{key}{suffix}": value for key, value in d.items()}
 
-def compute_player_stats(
-    matches: list[Match], player_id: str, k: Optional[list[int]]
-) -> Dict[str, float]:
-    """Compute comprehensive player statistics for different match windows."""
+def compute_one_player_stat(
+    matches: list[Match], 
+    matches_on_surface: list[Match], 
+    match: Match,
+    player:Player, 
+    ks: list[int]
+):  
+    player_stats = compute_player_match_based_stats(matches, player.player_id, k=ks)
+    player_stats = {
+        f"{key}": value for key, value in player_stats.items()
+    }
 
-    stats = {}
-    assert is_match_sorted(matches), "Matches must be sorted by date"
+    player_stats_on_surface = compute_player_match_based_stats(
+        matches_on_surface, player.player_id, k=ks
+    )
+    player_stats_on_surface = add_key_prefix_suffix(player_stats_on_surface, suffix="_on_surface")
 
-    for k_value in k:
-        selected_matches = matches[-k_value:]
-        if len(selected_matches) == 0:
-            continue
+    match_played_stats = compute_match_played_stats(matches, match.date)
 
-        # Calculate statistics
-        all_games_won = sum(
-            [get_games_won(match, player_id) for match in selected_matches], start=[]
-        )
-        all_games_conceded = sum(
-            [get_games_conceded(match, player_id) for match in selected_matches],
-            start=[],
-        )
-
-        games_won_by_set = safe_mean(np.array(all_games_won))
-        games_conceded_by_set = safe_mean(np.array(all_games_conceded))
-        winning_rate = safe_mean(
-            [is_winner(match, player_id) for match in selected_matches]
-        )
-
-        first_elo = get_elo(selected_matches[0], player_id)
-        last_elo = get_elo(selected_matches[-1], player_id)
-
-        mean_elo_opponent_winning_match, mean_elo_opponent_losing_match = (
-            compute_opponent_elo_stat(selected_matches, player_id)
-        )
-
-        stats[f"mean_elo_opponent_winning_match_@k={k_value}"] = (
-            mean_elo_opponent_winning_match
-        )
-        stats[f"mean_elo_opponent_losing_match_@k={k_value}"] = (
-            mean_elo_opponent_losing_match
-        )
-        stats[f"elo_diff_@k={k_value}"] = last_elo - first_elo
-        stats[f"win_rate_@k={k_value}"] = winning_rate
-        stats[f"games_won_@k={k_value}"] = games_won_by_set
-        stats[f"games_conceded_@k={k_value}"] = games_conceded_by_set
-
-    return stats
-
-
-def compute_h2h_stats(
-    matches: list[Match], player_1_id: str, player_2_id: str
-) -> Dict[str, float]:
-    """Compute head-to-head statistics between two players."""
-    stats = {}
-    matches = sorted(matches, key=lambda x: x.date)
-
-    player_1_wins = np.sum([is_winner(match, player_1_id) for match in matches]).item()
-    player_2_wins = np.sum([is_winner(match, player_2_id) for match in matches]).item()
-
-    stats["h2h_player_1_wins"] = player_1_wins
-    stats["h2h_player_2_wins"] = player_2_wins
-    stats["h2h_player_1_win_rate"] = player_1_wins / len(matches) if matches else 0.0
-    stats["h2h_player_2_win_rate"] = player_2_wins / len(matches) if matches else 0.0
-    stats["h2h_total_matches"] = len(matches)
-
-    return stats
-
-
-def compute_player_age(player: Player, date: datetime.date) -> float:
-    """Calculate player's age at a specific date."""
-    return (date - player.birth_date).days / 365.25
-
-
-def compute_diff_stats(data: dict[str, Any]) -> dict[str, Any]:
-
-    diffs = {}
-    for k_1, v in data.items():
-        if "player_1" not in k_1:
-            continue
-
-        k_2 = k_1.replace("player_1", "player_2")
-        if k_2 not in data:
-            continue
-
-        v2 = data[k_2]
-        if isinstance(v, (int, float)) and isinstance(v2, (int, float)):
-            diff = v - v2
-
-            k_diff = k_1.replace("player_1", "diff")
-            diffs[k_diff] = diff
-
-    return {**data, **diffs}
+    return {
+        "age": compute_player_age(player, match.date),
+        **player_stats, 
+        **player_stats_on_surface, 
+        **match_played_stats
+    }
 
 
 async def compute_one_match_stat(
@@ -291,9 +144,6 @@ async def compute_one_match_stat(
         player_1 = player_id_to_player[match.player_1_id]
         player_2 = player_id_to_player[match.player_2_id]
 
-        player_1_age = compute_player_age(player_1, match.date)
-        player_2_age = compute_player_age(player_2, match.date)
-
         # Get player histories
         matches_player_1, matches_player_1_on_surface = await get_player_history_at_dt(
             player_id=match.player_1_id,
@@ -310,33 +160,25 @@ async def compute_one_match_stat(
             surface=match.surface,
             db_session=db_session,
         )
-
-        # Compute player statistics
-        player_1_stats = compute_player_stats(matches_player_1, match.player_1_id, k=ks)
-        player_1_stats = {
-            f"player_1_{key}": value for key, value in player_1_stats.items()
-        }
-
-        player_1_stats_on_surface = compute_player_stats(
-            matches_player_1_on_surface, match.player_1_id, k=ks
+        
+        player_1_stats = compute_one_player_stat(
+            matches=matches_player_1,
+            matches_on_surface=matches_player_1_on_surface,
+            player=match.player_1_id,
+            match=match,
+            ks=ks,
         )
-        player_1_stats_on_surface = {
-            f"player_1_{key}_on_surface": value
-            for key, value in player_1_stats_on_surface.items()
-        }
+        player_1_stats = add_key_prefix_suffix(player_1_stats, prefix="player_1")
 
-        player_2_stats = compute_player_stats(matches_player_2, match.player_2_id, k=ks)
-        player_2_stats = {
-            f"player_2_{key}": value for key, value in player_2_stats.items()
-        }
-
-        player_2_stats_on_surface = compute_player_stats(
-            matches_player_2_on_surface, match.player_2_id, k=ks
+        player_2_stats = compute_one_player_stat(
+            matches=matches_player_2,
+            matches_on_surface=matches_player_2_on_surface,
+            player=match.player_2_id,
+            match=match,
+            ks=ks,
         )
-        player_2_stats_on_surface = {
-            f"player_2_{key}_on_surface": value
-            for key, value in player_2_stats_on_surface.items()
-        }
+        player_2_stats = add_key_prefix_suffix(player_2_stats, prefix="player_2")
+
 
         # Get head-to-head statistics
         h2h_matches = await get_h2h_matches(
@@ -352,16 +194,10 @@ async def compute_one_match_stat(
         # Combine all data
         data = {
             **match.model_dump(),
-            "player_1_age": player_1_age,
-            "player_2_age": player_2_age,
             **player_1_stats,
-            **player_1_stats_on_surface,
             **player_2_stats,
-            **player_2_stats_on_surface,
             **h2h_stats,
         }
-
-        # data = compute_diff_stats(data)
 
         # Convert date to string for JSON serialization
         data["date"] = str(data["date"])
@@ -418,7 +254,7 @@ async def process_matches_async(
     """Process matches asynchronously."""
     # Create async engine and session
     async_engine = create_async_engine(async_db_url, echo=False)
-
+    
     stats = []
     for match in tqdm(matches, desc="Processing matches", unit="match"):
         try:
@@ -505,13 +341,6 @@ def generate_stats(
         help="Override existing output files if they already exist",
     ),
 ):
-    """
-    Generate comprehensive tennis match statistics.
-
-    This command processes tennis matches from the database and generates
-    detailed statistics for each match including player performance metrics,
-    head-to-head records, and surface-specific statistics.
-    """
     # Parse k values
     ks = [int(k.strip()) for k in k_values.split(",")]
 

@@ -80,7 +80,7 @@ def train_model(
         save_dir=plot_save_dir,
     )
 
-    fi_df = model_wrapper.feature_importance(X_train_scaled)
+    fi_df = model_wrapper.feature_importance()
     plot_feature_importances(
         fi_df["importance"],
         feature_names=fi_df["feature"],

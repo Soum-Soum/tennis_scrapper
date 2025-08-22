@@ -35,4 +35,5 @@ dependencies = [
 dev = [
     "black>=25.1.0",
     "ruff>=0.12.9",
+    "vulture>=2.14",
 ]

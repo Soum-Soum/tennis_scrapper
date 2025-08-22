@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 import joblib
 import numpy as np
 import pandas as pd
@@ -132,19 +132,19 @@ def compute_diff_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def preprocess_commons(X_df: pd.DataFrame, cols_data: ColsData) -> pd.DataFrame:
-    X_df_flipped = randomly_flip_players(X_df, target_col=cols_data.target)
-    X_df_flipped = compute_diff_columns(X_df_flipped)
-    X_df_flipped = cols_data.validate_cols(X_df_flipped)
-    X_df_flipped = X_df_flipped.drop(columns=cols_data.categorical)
-    X_df_flipped = X_df_flipped.drop(columns=cols_data.other)
-    return X_df_flipped
+    X_df = compute_diff_columns(X_df)
+    X_df = cols_data.validate_cols(X_df)
+    X_df = X_df.drop(columns=cols_data.categorical)
+    X_df = X_df.drop(columns=cols_data.other)
+    return X_df
     
 
 def preprocess_dataframe_train(X_df: pd.DataFrame, cols_data: ColsData, split_date:date) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.DataFrame, pd.DataFrame, StandardScaler]:
     X_df["result"] = 0
-    X_df_flipped = preprocess_commons(X_df, cols_data)
+    X_df_flipped = randomly_flip_players(X_df, target_col=cols_data.target)
+    X_df_preprocessed = preprocess_commons(X_df_flipped, cols_data)
     X_train, X_val, y_train, y_val = time_split_shuffle(
-        X_df_flipped,
+        X_df_preprocessed,
         split_date=split_date,
         target_col=cols_data.target,
         date_col=cols_data.date_column,
@@ -157,8 +157,7 @@ def preprocess_dataframe_train(X_df: pd.DataFrame, cols_data: ColsData, split_da
 
 def preprocess_dataframe_predict(X_df: pd.DataFrame, cols_data: ColsData, scaler: StandardScaler) -> pd.DataFrame:
     X_df_flipped = preprocess_commons(X_df, cols_data).copy()
-    X_df_scaled = scaler.transform(X_df_flipped[cols_data.numerical])
-    X_df_flipped[cols_data.numerical] = X_df_scaled
+    X_df_flipped[cols_data.numerical] = scaler.transform(X_df_flipped[cols_data.numerical])
     return X_df_flipped
 
 def save_dfs_for_cache(
