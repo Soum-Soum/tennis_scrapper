@@ -1,9 +1,9 @@
 from datetime import datetime
 from bs4 import BeautifulSoup
 import pytest
-from tennis_scrapper.db.models import Gender, Tournament
-from tennis_scrapper.scrap.matches import pair_to_match
-from tennis_scrapper.scrap.tournaments import get_default_tournament
+from db.models import Gender
+from scrap.matches import pair_to_match
+from scrap.tournaments import get_default_tournament
 
 
 @pytest.fixture
@@ -47,13 +47,16 @@ def test_pair_to_match(row_one_html, row_two_html):
     dummy_tournament = get_default_tournament(2023, Gender.MEN)
     date = datetime(2023, 5, 15).date()
     the_match = pair_to_match(
-        tournament=dummy_tournament, row1=row_one_html, row2=row_two_html, date=date
+        tournament_url_extension=dummy_tournament.url_extension, 
+        row1=row_one_html, 
+        row2=row_two_html, 
+        date=date,
+        gender=Gender.MEN
     )
 
-    assert the_match.tournament_id == dummy_tournament.tournament_id
+    assert the_match.tournament_url_extension == dummy_tournament.url_extension
     assert the_match.date == date
     assert the_match.players_gender == dummy_tournament.players_gender
-    assert the_match.surface == dummy_tournament.surface
     assert the_match.player_1_url_extension == "/player/sinner-8b8e8/"
     assert the_match.player_2_url_extension == "/player/mannarino-a7108/"
     assert the_match.score == "6-4 7-6"

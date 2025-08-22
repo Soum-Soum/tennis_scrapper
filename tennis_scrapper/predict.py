@@ -3,7 +3,6 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 import json
 import tempfile
-from typing import Optional
 from urllib.request import urlopen
 from pathlib import Path
 from bs4 import BeautifulSoup
@@ -13,16 +12,15 @@ import pandas as pd
 from sqlmodel import Session, select
 from tqdm import tqdm
 import typer
-from xgboost import XGBClassifier
 
 from conf.config import settings
 from cli.generate_stats import process_matches_async
 from data.add_elo import K, compute_elo
 from db.db_utils import get_engine, get_one_player_matches, get_player_by_url_extension, get_table, get_tournament_by_url
-from db.models import Gender, Match, Player, Ranking, Surface, Tournament
+from db.models import Gender, Match, Player, Ranking, Surface
 from scrap.matches import extract_matches_from_table
 from scrap.urls import get_match_list_page_url
-from ml.preprocess_data import ColsData, preprocess_dataframe_predict, preprocess_dataframe_predict, compute_diff_columns
+from ml.preprocess_data import ColsData, preprocess_dataframe_predict
 from ml.models.xgb import XgbClassifierWrapper
 from tennis_scrapper.stats.stats_utils import get_elo
 
