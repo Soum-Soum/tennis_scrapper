@@ -225,8 +225,10 @@ def predict(
 
     predictions_df = model_wrapper.predict(X_test_preprocessed)
 
-    X_test["proba"] = predictions_df["predicted_proba"]
-    X_test["predicted"] = predictions_df["predicted_class"]
+    # X_test["proba"] = predictions_df["predicted_proba"]
+    # X_test["predicted"] = predictions_df["predicted_class"]
+    
+    X_test = pd.concat([X_test, predictions_df], axis=1)
 
     prediction_path = Path(f"predictions/{datetime.now().strftime('%Y-%m-%d')}")
     prediction_path.mkdir(parents=True, exist_ok=True)

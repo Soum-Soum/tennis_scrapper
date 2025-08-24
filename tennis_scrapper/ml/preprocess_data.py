@@ -111,10 +111,10 @@ def normalize_numerical(
     X_train_scaled = X_train.copy()
     X_val_scaled = X_val.copy()
 
-    cols_to_scale = [col for col in numerical_cols if col in X_train.columns]
 
     scaler = StandardScaler()
 
+    cols_to_scale = numerical_cols
     X_train_scaled[cols_to_scale] = scaler.fit_transform(X_train[cols_to_scale])
     X_val_scaled[cols_to_scale] = scaler.transform(X_val[cols_to_scale])
 
@@ -155,8 +155,10 @@ def fill_nas(df: pd.DataFrame, cols_data: ColsData) -> pd.DataFrame:
         df[col] = df[col].fillna(0)
 
     df = fill_nas_odds(df)
-    
-    df_wo_nas = df.dropna()
+
+
+    subset = set(df.columns).intersection(set(cols_data.numerical))
+    df_wo_nas = df.dropna(subset=subset)
     assert df_wo_nas.shape[0] > 0.95 * df.shape[0], "More than 5% of the data is missing."
 
     return df_wo_nas

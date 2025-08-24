@@ -321,24 +321,29 @@ def kelly_criterion(p: float, odds: float) -> float:
 
 
 def compute_bets(
-    matches, probas, max_bet_fraction: float, bankroll: float
+    matches, predictions:pd.DataFrame, max_bet_fraction: float, bankroll: float
 ) -> pd.DataFrame:
     rows = []
-    for match, p2 in zip(matches, probas):
+    for match, (pred_class, pred_proba) in zip(matches, predictions.values):
         p1_player = get_player_by_id(match.player_1_id)
         p2_player = get_player_by_id(match.player_2_id)
 
-        pred_p2 = int(round(p2))  # 0->P1, 1->P2
-        if pred_p2 == 0:
+        
+        if pred_class == 0:
             predicted_player = p1_player
-            p_win = 1.0 - p2
+            p_win = 1.0 - pred_proba
             odd = match.player_1_odds
             side = "P1"
-        else:
+        elif pred_class == 1:
             predicted_player = p2_player
-            p_win = float(p2)
+            p_win = float(pred_proba)
             odd = match.player_2_odds
             side = "P2"
+        else:
+            raise ValueError(f"Invalid predicted class: {pred_class}")
+
+
+        print(f"Match: {p1_player.name} vs {p2_player.name}, Predicted: {predicted_player.name} with p={p_win:.3f} | pred_class={pred_class} and odd={odd}")
 
         valid_odd = odd and odd > 1.0
         implied = (1.0 / odd) if valid_odd else math.nan
@@ -389,10 +394,11 @@ def run(csv: Path, bankroll: float = 1000, max_bet_fraction: float = 0.05):
     # 1. Charger ton CSV brut
     raw = pd.read_csv(csv)
 
-    probas = raw["proba"].tolist()
+    predictions = raw[["predicted_class", "predicted_proba"]]
 
     matches = []
-    for json_file in csv.parent.glob("matches/*.json"):
+    for match_id in raw["match_id"]:
+        json_file = csv.parent / "matches" / f"{match_id}.json"
         with open(json_file, "r") as f:
             match_data = json.load(f)
             match_data.pop("match_id", None)
@@ -401,7 +407,7 @@ def run(csv: Path, bankroll: float = 1000, max_bet_fraction: float = 0.05):
         matches.append(match)
 
     # 3. Calculer le tableau enrichi
-    df = compute_bets(matches, probas, max_bet_fraction, bankroll)
+    df = compute_bets(matches, predictions, max_bet_fraction, bankroll)
 
     # 4. Lancer l’app
     app = BetsApp(df)
