@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional, Sequence
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.decomposition import PCA
 from sklearn.metrics import (
     roc_curve,
     auc,
@@ -228,3 +229,23 @@ def plot_feature_importances(
         plt.close(fig)
     else:
         plt.show()
+
+def plot_pca(pca: PCA, save_path: Optional[str] = None):
+    plt.figure(figsize=(8, 5))
+    plt.plot(
+        np.cumsum(pca.explained_variance_ratio_),
+        marker="o",
+        linestyle="--",
+        color="b",
+    )
+    plt.xlabel("Number of Components")
+    plt.ylabel("Variance (%)")  # for each component
+    plt.title("PCA - Variance Explained")
+    plt.grid()
+
+    if save_path:
+        plt.savefig(save_path, bbox_inches="tight", dpi=150)
+        plt.close()
+    else:
+        plt.show()
+

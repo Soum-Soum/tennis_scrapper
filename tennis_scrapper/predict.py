@@ -22,7 +22,7 @@ from scrap.matches import extract_matches_from_table
 from scrap.urls import get_match_list_page_url
 from ml.preprocess_data import ColsData, preprocess_dataframe_predict
 from ml.models.xgb import XgbClassifierWrapper
-from tennis_scrapper.stats.stats_utils import get_elo
+from stats.stats_utils import get_elo
 
 
 def incomming_match_from_html(html: str, date: date, gender: Gender) -> list[Match]:
@@ -171,16 +171,20 @@ async def compute_x_test(matches: list[Match]) -> pd.DataFrame:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         X_test = await process_matches_async(
-            matches, player_id_to_player, ks, Path(tmpdir), async_db_url, False
+            matches, player_id_to_player, ks, Path(tmpdir), async_db_url, False, min_hist_size=10
         )
     return pd.DataFrame(X_test)
 
 
-app = typer.Typer()
+app = typer.Typer(pretty_exceptions_enable=False)
 
 
 @app.command()
-def predict():
+def predict(
+    base_dir: Path = typer.Option(
+        help="Path to save the base dir"
+    )
+):
 
     today = datetime.now().date()
     tomorrow = today + timedelta(days=1)
@@ -210,17 +214,14 @@ def predict():
     matches = sum(match_with_data.values(), [])
 
     X_test = asyncio.run(compute_x_test(matches))
-
+    
     with open("/home/pierre/dev/tennis_scrapper/resources/cols_data.json") as f:
         cols_data = ColsData.model_validate(json.load(f))
 
-    scaler = joblib.load("/home/pierre/dev/tennis_scrapper/output3/data/scaler.pkl")
+    model_wrapper = XgbClassifierWrapper.from_model(base_dir / "model" / "classifier.json")
+    scaler = joblib.load(base_dir / "data" / "scaler.pkl")
+    
     X_test_preprocessed = preprocess_dataframe_predict(X_df=X_test, cols_data=cols_data, scaler=scaler)
-
-    model_wrapper = XgbClassifierWrapper.from_model("/home/pierre/dev/tennis_scrapper/output3/model/classifier.json")
-
-    X_test_preprocessed = X_test_preprocessed.reindex(columns=model_wrapper.model.get_booster().feature_names)
-    X_test_preprocessed[cols_data.numerical] = scaler.transform(X_test[cols_data.numerical])
 
     predictions_df = model_wrapper.predict(X_test_preprocessed)
 

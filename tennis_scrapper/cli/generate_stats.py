@@ -15,8 +15,8 @@ from tqdm.asyncio import tqdm
 from conf.config import settings
 from db.db_utils import engine
 from db.models import Match, Player, Surface
-from tennis_scrapper.stats.compute_stats import compute_match_played_stats, compute_h2h_stats, compute_player_match_based_stats
-from tennis_scrapper.stats.stats_utils import compute_player_age
+from stats.compute_stats import compute_match_played_stats, compute_h2h_stats, compute_player_match_based_stats
+from stats.stats_utils import compute_player_age
 
 
 def is_match_valid(match: Match) -> bool:
@@ -76,14 +76,10 @@ async def get_h2h_matches(
             Match.date < match_date,
         )
         .order_by(Match.date)
-    ).all()
+    )
+    matches = matches.all()
     matches = list(filter(is_match_valid, matches))
     return sorted(matches, key=lambda x: x.date)
-
-
-def is_match_sorted(matches: list[Match]) -> bool:
-    """Check if matches are sorted by date."""
-    return all(matches[i].date <= matches[i + 1].date for i in range(len(matches) - 1))
 
 
 def add_key_prefix_suffix(d: dict, prefix: str = "", suffix: str = "") -> dict:
@@ -128,6 +124,7 @@ async def compute_one_match_stat(
     player_id_to_player: Dict[str, Player],
     ks: list[int],
     output_dir: Path,
+    min_hist_size: int,
     override: bool,
 ) -> Dict:
 
@@ -161,10 +158,14 @@ async def compute_one_match_stat(
             db_session=db_session,
         )
         
+        if len(matches_player_1) < min_hist_size or len(matches_player_2) < min_hist_size:
+            logger.warning(f"Skipping match {match.match_id}, not enough history (player 1: {len(matches_player_1)}, player 2: {len(matches_player_2)})")
+            return {}
+                
         player_1_stats = compute_one_player_stat(
             matches=matches_player_1,
             matches_on_surface=matches_player_1_on_surface,
-            player=match.player_1_id,
+            player=player_1,
             match=match,
             ks=ks,
         )
@@ -173,7 +174,7 @@ async def compute_one_match_stat(
         player_2_stats = compute_one_player_stat(
             matches=matches_player_2,
             matches_on_surface=matches_player_2_on_surface,
-            player=match.player_2_id,
+            player=player_2,
             match=match,
             ks=ks,
         )
@@ -250,6 +251,7 @@ async def process_matches_async(
     output_path: Path,
     async_db_url: str,
     override: bool,
+    min_hist_size: int
 ) -> list[dict]:
     """Process matches asynchronously."""
     # Create async engine and session
@@ -266,6 +268,7 @@ async def process_matches_async(
                     ks=ks,
                     output_dir=output_path,
                     override=override,
+                    min_hist_size=min_hist_size
                 )
             )
         except Exception as e:
@@ -335,6 +338,9 @@ def generate_stats(
         "--k-values",
         help="Comma-separated list of k values for statistics",
     ),
+    min_hist_size: int = typer.Option(
+        10, "--min-host-size", help="Minimum host size for statistics"
+    ),
     override: bool = typer.Option(
         False,
         "--override",
@@ -361,7 +367,7 @@ def generate_stats(
     # Run async processing
     asyncio.run(
         process_matches_async(
-            all_matches, player_id_to_player, ks, output_path, async_db_url, override
+            all_matches, player_id_to_player, ks, output_path, async_db_url, override, min_hist_size
         )
     )
 

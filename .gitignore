@@ -19,3 +19,8 @@ output*/
 .vscode/
 *.ipynb
 classifier.json
+
+.pytest_cache/ 
+.ruff_cache/
+
+predictions/

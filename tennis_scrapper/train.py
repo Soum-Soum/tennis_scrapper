@@ -9,6 +9,7 @@ import typer
 from plot import plot_feature_importances, save_all_plots
 from ml.models.xgb import XgbClassifierWrapper
 from ml.preprocess_data import ColsData, preprocess_dataframe_train, save_dfs_for_cache
+from ml.models.logistic import LogisticRegressionWrapper
 
 
 app = typer.Typer()
@@ -17,15 +18,20 @@ app = typer.Typer()
 @app.command()
 def train_model(
     base_dir: Path = typer.Option(
-        default="output", help="Path to save the trained model"
+        default="output", help="Path to save the base dir"
     ),
     split_date: datetime = typer.Option(
         default=datetime.strptime("2025-01-01", "%Y-%m-%d"),
         help="Date to split the training and validation sets",
     ),
     use_cache: bool = typer.Option(default=False, help="Whether to use cached data"),
+    add_pca: bool = typer.Option(default=False, help="Whether to add PCA features"),
 ):
 
+    with open("resources/cols_data.json") as f:
+        logger.info("Loading columns data from JSON")
+        cols_data = ColsData.model_validate(json.load(f))
+        
     data_save_path = base_dir / "data"
     if use_cache:
         X_train_scaled = pd.read_parquet(data_save_path / "X_train_scaled.parquet")
@@ -34,10 +40,6 @@ def train_model(
         y_val = pd.read_parquet(data_save_path / "y_val.parquet")["result"]
 
     else:
-
-        with open("resources/cols_data.json") as f:
-            logger.info("Loading columns data from JSON")
-            cols_data = ColsData.model_validate(json.load(f))
 
         chunks = list((base_dir / "chunks/").glob("*.parquet"))
         X_df = pd.concat(list(map(pd.read_parquet, chunks))).copy()
@@ -57,16 +59,11 @@ def train_model(
             save_dir=data_save_path,
         )
 
-    xgb_kwargs = {"n_estimators": 1200, "max_depth": 10, "min_child_weight": 15}
+    xgb_kwargs = {"n_estimators": 600, "max_depth": 7, "min_child_weight": 15}
     model_wrapper = XgbClassifierWrapper.from_params(xgb_kwargs, y_train)
+    # model_wrapper = LogisticRegressionWrapper.from_params({})
 
-    model_wrapper.model.fit(
-        X_train_scaled,
-        y_train,
-        eval_set=[((X_train_scaled, y_train)), (X_val_scaled, y_val)],
-        verbose=100,
-    )
-
+    model_wrapper.train(X_train_scaled, y_train, X_val_scaled, y_val, cols_data)
 
     model_wrapper.save_model(save_path=base_dir / "model" / "classifier.json")
     predictions_df = model_wrapper.predict(X_val_scaled)

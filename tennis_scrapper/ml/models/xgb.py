@@ -2,7 +2,8 @@ from pathlib import Path
 import pandas as pd
 from xgboost import XGBClassifier
 
-from ml.models.base import compute_scale_pos_weight
+from ml.models.base import ModelWrapper, compute_scale_pos_weight, drop_cols
+from ml.preprocess_data import ColsData
 
 def build_xgb(
     scale_pos_weight: float,
@@ -27,11 +28,37 @@ def build_xgb(
     defaults.update(kwargs)
     return XGBClassifier(**defaults)
 
-class XgbClassifierWrapper:
+class XgbClassifierWrapper(ModelWrapper):
 
     def __init__(self, model: XGBClassifier):
-        self.model = model
-   
+        super().__init__(model)
+
+    def train(self, 
+              X_train: pd.DataFrame, 
+              y_train: pd.Series,
+              X_val: pd.DataFrame,
+              y_val: pd.Series,
+              cols_data: ColsData) -> None:
+        
+        X_train = drop_cols(X_train, cols_data)
+        X_val = drop_cols(X_val, cols_data)
+
+        self.model.fit(
+            X_train, y_train,
+            eval_set=[(X_train, y_train), (X_val, y_val)],
+            verbose=100,
+        )
+
+    def predict(self, X: pd.DataFrame) -> pd.DataFrame:
+        feature_names = self.model.get_booster().feature_names
+        X = X.copy()[feature_names].reindex(columns=feature_names)
+        probas = self.model.predict_proba(X)[:, 1]
+        predicted_class = self.model.predict(X)
+        return pd.DataFrame({
+            "predicted_class": predicted_class,
+            "predicted_proba": probas
+        })
+        
     def feature_importance(self) -> pd.DataFrame:
         booster = self.model.get_booster()
         importances = self.model.feature_importances_
@@ -44,14 +71,6 @@ class XgbClassifierWrapper:
     def save_model(self, save_path: Path) -> None:
         save_path.parent.mkdir(parents=True, exist_ok=True)
         self.model.save_model(save_path)
-
-    def predict(self, X: pd.DataFrame) -> pd.DataFrame:
-        probas = self.model.predict_proba(X)[:, 1]
-        predicted_class = self.model.predict(X)
-        return pd.DataFrame({
-            "predicted_class": predicted_class,
-            "predicted_proba": probas
-        })
 
     @classmethod
     def from_params(cls, xgb_kwargs: dict, y_train: pd.Series) -> "XgbClassifierWrapper":

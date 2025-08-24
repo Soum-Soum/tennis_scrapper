@@ -1,5 +1,4 @@
 from datetime import date
-import numpy as np
 from db.models import Match, Player
 
 
@@ -57,12 +56,20 @@ def get_opponent_ranking(match: Match, player_id: str) -> float:
     return opp_rank
 
 
-def safe_mean(arr: np.ndarray | list, default=0.0):
-    if not isinstance(arr, np.ndarray):
-        arr = np.array(arr)
-    return np.mean(arr).item() if arr.size > 0 else default
+def safe_mean(arr: list, default=0.0):
+    return sum(arr) / len(arr) if len(arr) > 0 else default
 
 
 def compute_player_age(player: Player, date: date) -> float:
     """Calculate player's age at a specific date."""
     return (date - player.birth_date).days / 365.25
+
+
+def is_match_valid(match: Match) -> bool:
+    def validate_score_str(score_str: str) -> bool:
+        allowed_chars = set("0123456789- ")
+        return all(char in allowed_chars for char in score_str)
+
+    if not match.score or not validate_score_str(match.score):
+        return False
+    return True

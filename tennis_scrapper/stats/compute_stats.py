@@ -1,8 +1,7 @@
 from datetime import date, timedelta
 from typing import Dict, Optional
-from tennis_scrapper.cli.generate_stats import is_match_sorted
-from tennis_scrapper.db.models import Match
-from tennis_scrapper.stats.stats_utils import get_elo, get_games_conceded, get_games_won, get_opponent_elo, get_opponent_ranking, is_winner, safe_mean
+from db.models import Match
+from stats.stats_utils import get_elo, get_games_conceded, get_games_won, get_opponent_elo, get_opponent_ranking, is_winner, safe_mean
 
 
 import numpy as np
@@ -89,40 +88,46 @@ def compute_h2h_stats(
     return stats
 
 
+def is_match_sorted(matches: list[Match]) -> bool:
+    """Check if matches are sorted by date."""
+    return all(matches[i].date <= matches[i + 1].date for i in range(len(matches) - 1))
+
+
 def compute_player_match_based_stats(
     matches: list[Match], player_id: str, k: Optional[list[int]]
 ) -> Dict[str, float]:
     """Compute comprehensive player statistics for different match windows."""
 
-    stats = {}
     assert is_match_sorted(matches), "Matches must be sorted by date"
+    stats = {}
 
     for k_value in k:
         selected_matches = matches[-k_value:]
-        if len(selected_matches) == 0:
+        if not selected_matches:
             continue
 
-        all_games_won = sum(
-            [get_games_won(match, player_id) for match in selected_matches], start=[]
-        )
-        all_games_conceded = sum(
-            [get_games_conceded(match, player_id) for match in selected_matches],
-            start=[],
-        )
+        # Pré-calculer les infos en un seul passage
+        games_won_all, games_conceded_all, winners = [], [], []
+        for m in selected_matches:
+            games_won_all.extend(get_games_won(m, player_id))
+            games_conceded_all.extend(get_games_conceded(m, player_id))
+            winners.append(is_winner(m, player_id))
 
-        games_won_by_set = safe_mean(np.array(all_games_won))
-        games_conceded_by_set = safe_mean(np.array(all_games_conceded))
-        winning_rate = safe_mean(
-            [is_winner(match, player_id) for match in selected_matches]
-        )
+        # Moyennes (safe_mean peut accepter une liste directement)
+        games_won_by_set = safe_mean(games_won_all)
+        games_conceded_by_set = safe_mean(games_conceded_all)
+        winning_rate = safe_mean(winners)
 
+        # ELO
         first_elo = get_elo(selected_matches[0], player_id)
         last_elo = get_elo(selected_matches[-1], player_id)
 
+        # Stats adversaires
         opponent_stats = compute_opponent_elo_stat(selected_matches, player_id)
-        opponent_stats = {f"{key}@k={k_value}": value for key, value in opponent_stats.items()}
+        opponent_stats = {f"{key}_@k={k_value}": v for key, v in opponent_stats.items()}
         stats.update(opponent_stats)
 
+        # Résultats
         stats[f"elo_diff_@k={k_value}"] = last_elo - first_elo
         stats[f"win_rate_@k={k_value}"] = winning_rate
         stats[f"games_won_@k={k_value}"] = games_won_by_set
