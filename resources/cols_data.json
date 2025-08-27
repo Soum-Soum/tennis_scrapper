@@ -2,10 +2,10 @@
     "numerical": [
         "player_1_odds",
         "player_2_odds",
-        "atp_ranking_player_1",
-        "atp_ranking_player_2",
-        "atp_points_player_1",
-        "atp_points_player_2",
+        "player_1_ranking",
+        "player_2_ranking",
+        "player_1_ranking_points",
+        "player_2_ranking_points",
         "player_1_elo",
         "player_1_elo_on_surface",
         "player_2_elo",
@@ -191,8 +191,8 @@
         "h2h_diff_wins",
         "h2h_diff_win_rate",
         "diff_odds",
-        "atp_ranking_diff",
-        "atp_points_diff",
+        "diff_ranking",
+        "diff_ranking_points",
         "player_1_mean_elo_opponent_winning_match_@k=3",
         "player_1_mean_elo_opponent_winning_match_@k=5",
         "player_1_mean_elo_opponent_winning_match_@k=10",
@@ -384,7 +384,10 @@
         "player_1_mean_ranking_opponent_winning_match_@k=25",
         "diff_match_per_day_last_year",
         "player_1_mean_ranking_opponent_losing_match_@k=25",
-        "diff_match_played_last_month"
+        "diff_match_played_last_month",
+        "player_2_history_size",
+        "player_1_history_size",
+        "diff_history_size"
     ],
     "categorical": [
         "players_gender",
@@ -395,16 +398,17 @@
         "player_1_id",
         "player_2_id",
         "tournament_id",
+        "tournament_url_extension",
         "match_id",
         "player_1_url_extension",
         "player_2_url_extension",
         "score"
     ],
     "fill_na_with_zero": [
-        "atp_points_player_1",
-        "atp_points_player_2",
-        "atp_ranking_player_1",
-        "atp_ranking_player_2"
+        "player_1_ranking_points",
+        "player_2_ranking_points",
+        "player_1_ranking",
+        "player_2_ranking"
     ],
     "target": "result",
     "date_column": "date"

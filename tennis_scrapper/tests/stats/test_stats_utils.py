@@ -14,16 +14,16 @@ class DummyMatch:
 		score: str,
 		player_1_elo: float = 1500.0,
 		player_2_elo: float = 1400.0,
-		atp_ranking_player_1: int = 1,
-		atp_ranking_player_2: int = 2,
+		player_1_ranking: int = 1,
+		player_2_ranking: int = 2,
 	):
 		self.player_1_id = player_1_id
 		self.player_2_id = player_2_id
 		self.score = score
 		self.player_1_elo = player_1_elo
 		self.player_2_elo = player_2_elo
-		self.atp_ranking_player_1 = atp_ranking_player_1
-		self.atp_ranking_player_2 = atp_ranking_player_2
+		self.player_1_ranking = player_1_ranking
+		self.player_2_ranking = player_2_ranking
 
 
 class DummyPlayer:
@@ -54,7 +54,7 @@ def test_games_won_and_conceded_for_loser():
 
 
 def test_elo_and_ranking_accessors():
-	m = DummyMatch("p1", "p2", "6-4 4-6 7-6", player_1_elo=1600, player_2_elo=1550, atp_ranking_player_1=10, atp_ranking_player_2=20)
+	m = DummyMatch("p1", "p2", "6-4 4-6 7-6", player_1_elo=1600, player_2_elo=1550, player_1_ranking=10, player_2_ranking=20)
 	assert get_elo(m, "p1") == 1600
 	assert get_opponent_elo(m, "p1") == 1550
 	assert get_ranking(m, "p2") == 20

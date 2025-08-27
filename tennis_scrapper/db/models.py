@@ -164,25 +164,25 @@ class Match(BaseMatch, table=True):
         nullable=True,
         description="Elo rating of player 2 on the match surface before the match",
     )
-    atp_ranking_player_1: Optional[int] = Field(
+    player_1_ranking: Optional[int] = Field(
         default=None,
         nullable=True,
-        description="ATP ranking of player 1 before the match",
+        description="Ranking of player 1 before the match",
     )
-    atp_points_player_1: Optional[float] = Field(
+    player_1_ranking_points: Optional[float] = Field(
         default=None,
         nullable=True,
-        description="ATP points of player 1 before the match",
+        description="Ranking points of player 1 before the match",
     )
-    atp_ranking_player_2: Optional[int] = Field(
+    player_2_ranking: Optional[int] = Field(
         default=None,
         nullable=True,
-        description="ATP ranking of player 2 before the match",
+        description="Ranking of player 2 before the match",
     )
-    atp_points_player_2: Optional[float] = Field(
+    player_2_ranking_points: Optional[float] = Field(
         default=None,
         nullable=True,
-        description="ATP points of player 2 before the match",
+        description="Ranking points of player 2 before the match",
     )
 
     __table_args__ = (
@@ -263,4 +263,22 @@ class EloRanking(HashedIDModel, table=False):
             raise ValueError(f"Elo ranking ID is already set: {self.elo_ranking_id}")
         self.elo_ranking_id = self.generate_hashed_id(
             self.player_id, self.elo_point, self.date, self.surface
+        )
+
+
+class ModelPredictions(HashedIDModel, table=True):
+    prediction_id: str = Field(default=None, primary_key=True)
+    match_id: str = Field(foreign_key="match.match_id", nullable=False)
+    predicted_class: str = Field(nullable=False)
+    predicted_proba: float = Field(nullable=False)
+    player_1_odds: float = Field(nullable=False)
+    player_2_odds: float = Field(nullable=False)
+    date: datetime.date = Field(nullable=False)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.prediction_id:
+            raise ValueError(f"Prediction ID is already set: {self.prediction_id}")
+        self.prediction_id = self.generate_hashed_id(
+            self.match_id, self.predicted_class, self.predicted_proba, self.player_1_odds, self.player_2_odds, self.date
         )

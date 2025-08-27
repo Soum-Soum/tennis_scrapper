@@ -26,6 +26,7 @@ def train_model(
     ),
     use_cache: bool = typer.Option(default=False, help="Whether to use cached data"),
     add_pca: bool = typer.Option(default=False, help="Whether to add PCA features"),
+    min_history_size: int = typer.Option(default=10, help="Minimum number of matches to store in history"),
 ):
 
     with open("resources/cols_data.json") as f:
@@ -46,7 +47,7 @@ def train_model(
         logger.info(f"Loaded {len(X_df)} records from {len(chunks)} chunks")
         X_df["result"] = 0
 
-        X_train, X_val, y_train, y_val, X_train_scaled, X_val_scaled, scaler = preprocess_dataframe_train(X_df, cols_data, split_date)
+        X_train, X_val, y_train, y_val, X_train_scaled, X_val_scaled, scaler = preprocess_dataframe_train(X_df, cols_data, split_date, min_history_size)
 
         save_dfs_for_cache(
             X_train=X_train,

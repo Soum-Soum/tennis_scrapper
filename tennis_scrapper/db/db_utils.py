@@ -19,7 +19,7 @@ from sqlmodel import (
 from tqdm import tqdm
 
 from conf.config import settings
-from db.models import Match, Surface, Player, Tournament
+from db.models import Gender, Match, Ranking, Surface, Player, Tournament
 
 DB_PATH = settings.db_url
 
@@ -194,8 +194,6 @@ def add_tournament_to_match_table(db_session: Session):
     db_session.commit()
 
 
-
-
 @contextmanager
 def get_session(existing_session: Optional[Session] = None):
     if existing_session is not None:
@@ -204,7 +202,10 @@ def get_session(existing_session: Optional[Session] = None):
         with Session(get_engine()) as session:
             yield session
 
-def get_player_by_id(player_id: str, db_session: Optional[Session]=None) -> Optional[Player]:
+
+def get_player_by_id(
+    player_id: str, db_session: Optional[Session] = None
+) -> Optional[Player]:
     """Get a player by ID."""
     with get_session(db_session) as session:
         player = session.exec(
@@ -212,12 +213,13 @@ def get_player_by_id(player_id: str, db_session: Optional[Session]=None) -> Opti
         ).first()
         return player
 
+
 def get_one_player_matches(
     player_id: str,
     date: Optional[date] = None,
     surface: Optional[Surface] = None,
     limit: Optional[int] = None,
-    db_session: Optional[Session]=None,
+    db_session: Optional[Session] = None,
 ) -> list[Match]:
 
     with get_session(db_session) as db_session:
@@ -236,16 +238,38 @@ def get_one_player_matches(
 
         return db_session.exec(statement).all()
 
-def get_player_by_url_extension(url_extension: str, db_session: Optional[Session]=None) -> Player:
+
+def get_player_by_url_extension(
+    url_extension: str, db_session: Optional[Session] = None
+) -> Player:
     with get_session(db_session) as session:
         statement = select(Player).where(Player.url_extension == url_extension)
         player = session.exec(statement).first()
         if player is None:
             raise ValueError(f"Player with url extension {url_extension} not found")
         return player
-    
-def get_tournament_by_url(url: str, db_session: Optional[Session]=None) -> Optional[Tournament]:
+
+
+def get_tournament_by_url(
+    url: str, db_session: Optional[Session] = None
+) -> Optional[Tournament]:
     with get_session(db_session) as db_session:
         return db_session.exec(
             select(Tournament).where(Tournament.url_extension == url)
         ).first()
+
+
+def get_last_ranking(db_session: Session, gender: Gender) -> list[Ranking]:
+    logger.info(f"Fetching last ranking for circuit: {gender.circuit}")
+
+    last_ranking_date = db_session.exec(
+        select(Ranking.date)
+        .where(Ranking.circuit == gender.circuit)
+        .order_by(Ranking.date.desc())
+        .limit(1)
+    ).first()
+
+    statement = select(Ranking).where(
+        Ranking.circuit == gender.circuit, Ranking.date == last_ranking_date
+    )
+    return db_session.exec(statement).all()

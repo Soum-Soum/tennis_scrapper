@@ -6,12 +6,17 @@ from sqlmodel import Session, select, func
 from tqdm.asyncio import tqdm
 import typer
 
-from db.db_utils import add_player_id_to_match_table, add_player_id_to_ranking_table, add_tournament_to_match_table, get_session
+from db.db_utils import (
+    add_player_id_to_match_table,
+    add_player_id_to_ranking_table,
+    add_tournament_to_match_table,
+    get_session,
+)
 from db.models import Player, Match
 from scrap.matches import get_match_scrapping_tasks
 from scrap.tournaments import get_tournaments_scrapping_tasks
 from scrap.players import get_players_scrapping_tasks
-from scrap.rankings import get_ranking_scrapping_tasks, scrap_dates
+from scrap.rankings import get_ranking_scrapping_tasks, get_dates_to_scrap
 from data.add_rankings import add_rankings
 from data.add_elo import add_elo
 
@@ -28,11 +33,11 @@ def get_new_players_url_extensions(
     players_in_db_url_extensions = set(players_in_db_url_extensions)
 
     match_players_url_extensions = db_session.exec(
-        select(Match.player_1_url_extension).union(
-            select(Match.player_2_url_extension)
-        )
+        select(Match.player_1_url_extension).union(select(Match.player_2_url_extension))
     ).all()
-    match_players_url_extensions = set(map(lambda x: x[0], match_players_url_extensions))
+    match_players_url_extensions = set(
+        map(lambda x: x[0], match_players_url_extensions)
+    )
 
     return match_players_url_extensions - players_in_db_url_extensions
 
@@ -97,18 +102,19 @@ async def process_one_interval(
     )
 
     await tqdm.gather(
-        *get_players_scrapping_tasks(db_session, http_session, new_players_url_extensions),
+        *get_players_scrapping_tasks(
+            db_session, http_session, new_players_url_extensions
+        ),
         desc="Scraping players data",
         unit="player",
     )
-    
-    gender_to_dates = await scrap_dates(http_session, from_date, to_date)
+
+    gender_to_dates = await get_dates_to_scrap(db_session, http_session, from_date, to_date)
     await tqdm.gather(
         *get_ranking_scrapping_tasks(db_session, http_session, gender_to_dates),
         desc="Scraping players rankings",
         unit="date",
     )
-    
 
 
 async def scrap_all_data(from_date: date, to_date: date):

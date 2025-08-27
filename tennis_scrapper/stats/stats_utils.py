@@ -29,30 +29,34 @@ def get_games_won(match: Match, player_id: str) -> list[int]:
     won, _ = _games_lists(match, player_id)
     return won
 
+
 def get_games_conceded(match: Match, player_id: str) -> list[int]:
     """Get games conceded by player in each set."""
     _, conc = _games_lists(match, player_id)
     return conc
+
 
 def get_elo(match: Match, player_id: str) -> float:
     """Get player's ELO rating for a match."""
     self_elo, _ = _self_opp(match, player_id, "player_1_elo", "player_2_elo")
     return self_elo
 
+
 def get_opponent_elo(match: Match, player_id: str) -> float:
     """Get opponent's ELO rating for a match."""
     _, opp_elo = _self_opp(match, player_id, "player_1_elo", "player_2_elo")
     return opp_elo
 
+
 def get_ranking(match: Match, player_id: str) -> float:
     """Get player's ranking for a match."""
-    self_rank, _ = _self_opp(match, player_id, "atp_ranking_player_1", "atp_ranking_player_2")
+    self_rank, _ = _self_opp(match, player_id, "player_1_ranking", "player_2_ranking")
     return self_rank
 
 
 def get_opponent_ranking(match: Match, player_id: str) -> float:
     """Get opponent's ranking for a match."""
-    _, opp_rank = _self_opp(match, player_id, "atp_ranking_player_1", "atp_ranking_player_2")
+    _, opp_rank = _self_opp(match, player_id, "player_1_ranking", "player_2_ranking")
     return opp_rank
 
 
@@ -73,3 +77,13 @@ def is_match_valid(match: Match) -> bool:
     if not match.score or not validate_score_str(match.score):
         return False
     return True
+
+
+def add_key_prefix_suffix(d: dict, prefix: str = "", suffix: str = "") -> dict:
+    if prefix != "" and not prefix.endswith("_"):
+        prefix += "_"
+
+    if suffix != "" and not suffix.startswith("_"):
+        suffix = "_" + suffix
+
+    return {f"{prefix}{key}{suffix}": value for key, value in d.items()}

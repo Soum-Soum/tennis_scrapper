@@ -1,4 +1,5 @@
 from datetime import datetime, date
+from select import select
 from typing import Any, Coroutine
 
 from bs4 import BeautifulSoup
@@ -31,8 +32,23 @@ async def one_year_date_list(
     return options_values_date
 
 
-async def scrap_dates(
-    session: aiohttp.ClientSession, from_date: date, to_date: date
+def get_dates_in_db(
+    db_session: Session, gender: Gender, from_date: date, to_date: date
+) -> list[date]:
+    return db_session.exec(
+        select(Ranking.date).where(
+            Ranking.circuit == gender.circuit,
+            Ranking.date >= from_date,
+            Ranking.date <= to_date,
+        )
+    ).all()
+
+
+async def get_dates_to_scrap(
+    db_session: Session,
+    session: aiohttp.ClientSession,
+    from_date: date,
+    to_date: date,
 ) -> dict[Gender, list[str]]:
 
     gender_to_dates = {}
@@ -46,11 +62,16 @@ async def scrap_dates(
             desc=f"Scraping rankings dates for {gender} {from_date.year}-{to_date.year}",
             unit="page",
         )
-        dates = sum(dates_lists, [])
+        scraped_dates = sum(dates_lists, [])
         logger.info(
-            f"Found {len(dates)} rankings dates for {gender} {from_date.year}-{to_date.year}"
+            f"Found {len(scraped_dates)} rankings dates for {gender} {from_date.year}-{to_date.year}"
         )
-        gender_to_dates[gender] = dates
+
+        dates_in_db = get_dates_in_db(db_session, gender, from_date, to_date)
+
+        dates_to_scrap = set(scraped_dates) - set(dates_in_db)
+
+        gender_to_dates[gender] = list(dates_to_scrap)
 
     return gender_to_dates
 

@@ -36,7 +36,6 @@ COLUMNS_DEFAULT_ORDER = [
     "Stake €",
     "EV %",
     "Decision",
-    "Conf",
 ]
 
 
@@ -321,14 +320,13 @@ def kelly_criterion(p: float, odds: float) -> float:
 
 
 def compute_bets(
-    matches, predictions:pd.DataFrame, max_bet_fraction: float, bankroll: float
+    matches, predictions: pd.DataFrame, max_bet_fraction: float, bankroll: float
 ) -> pd.DataFrame:
     rows = []
     for match, (pred_class, pred_proba) in zip(matches, predictions.values):
         p1_player = get_player_by_id(match.player_1_id)
         p2_player = get_player_by_id(match.player_2_id)
 
-        
         if pred_class == 0:
             predicted_player = p1_player
             p_win = 1.0 - pred_proba
@@ -343,8 +341,6 @@ def compute_bets(
             raise ValueError(f"Invalid predicted class: {pred_class}")
 
 
-        print(f"Match: {p1_player.name} vs {p2_player.name}, Predicted: {predicted_player.name} with p={p_win:.3f} | pred_class={pred_class} and odd={odd}")
-
         valid_odd = odd and odd > 1.0
         implied = (1.0 / odd) if valid_odd else math.nan
         edge = (p_win - implied) if valid_odd else math.nan
@@ -356,18 +352,9 @@ def compute_bets(
 
         decision = "💰 BET" if kelly_frac > 0 else "⏸️ PASS"
 
-        conf_steps = 5
-        conf_level = (
-            round((stake_frac / max_bet_fraction) * conf_steps)
-            if max_bet_fraction > 0
-            else 0
-        )
-        confidence = "▪" * max(0, min(conf_steps, conf_level)) + "·" * (
-            conf_steps - conf_level
-        )
-
         rows.append(
             {
+                "Date": match.date,
                 "Players": f"{p1_player.name} vs {p2_player.name}",
                 "Predicted Winner": f"{predicted_player.name}({side})",
                 "Odds": odd if valid_odd else None,
@@ -379,7 +366,6 @@ def compute_bets(
                 "Stake €": round(stake_eur, 2),
                 "EV %": round(100 * ev, 2) if valid_odd else None,
                 "Decision": decision,
-                "Conf": confidence,
             }
         )
 
