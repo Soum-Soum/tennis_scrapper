@@ -2,8 +2,12 @@ from pathlib import Path
 import pandas as pd
 from xgboost import XGBClassifier
 
-from ml.models.base import ModelWrapper, compute_scale_pos_weight, drop_cols
-from ml.preprocess_data import ColsData
+from tennis_scrapper.ml.models.base import (
+    ModelWrapper,
+    compute_scale_pos_weight,
+    drop_cols,
+)
+from tennis_scrapper.ml.preprocess_data import ColsData
 
 
 def build_xgb(

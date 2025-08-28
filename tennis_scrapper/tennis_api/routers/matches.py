@@ -2,12 +2,12 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlmodel import or_, select
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from db.models import Match
+from tennis_scrapper.db.models import Match
 from tennis_api.deps import get_async_session
-from db.db_utils import get_h2h_matches, get_player_history
+from tennis_scrapper.db.db_utils import get_h2h_matches, get_player_history
 
 
 router = APIRouter(prefix="/matches", tags=["matches"])

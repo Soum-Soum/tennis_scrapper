@@ -4,7 +4,7 @@ from loguru import logger
 from sqlmodel import Session, select, text
 from tqdm import tqdm
 
-from db.models import Ranking, Gender
+from tennis_scrapper.db.models import Ranking, Gender
 
 ADD_RANKINGS = """
     UPDATE match AS m
@@ -19,6 +19,7 @@ ADD_RANKINGS = """
         AND r.date    = :start_date
         AND r.player_id = m.player_{k}_id
 """
+
 
 def add_rankings(db_session: Session) -> None:
     logger.info("Adding ATP points to matches...")
@@ -39,7 +40,9 @@ def add_rankings(db_session: Session) -> None:
         date_pairs = list(zip(distinct_dates[:-1], distinct_dates[1:]))
 
         # Single transaction for this gender
-        for start_date, end_date in tqdm(date_pairs, desc=f"Adding rankings to matches for {gender.circuit}"):
+        for start_date, end_date in tqdm(
+            date_pairs, desc=f"Adding rankings to matches for {gender.circuit}"
+        ):
             params = {
                 "gender": gender.value if hasattr(gender, "value") else gender,
                 "circuit": gender.circuit,

@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from db.models import Ranking, Gender
+from tennis_scrapper.db.models import Ranking, Gender
 from tennis_api.deps import get_async_session
-from db.db_utils import get_last_ranking
 
 
 router = APIRouter(prefix="/rankings", tags=["rankings"])

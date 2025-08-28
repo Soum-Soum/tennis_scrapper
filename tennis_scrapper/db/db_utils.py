@@ -19,8 +19,15 @@ from sqlmodel import (
 )
 from tqdm import tqdm
 
-from conf.config import settings
-from db.models import Gender, Match, Ranking, Surface, Player, Tournament
+from tennis_scrapper.conf.config import settings
+from tennis_scrapper.db.models import (
+    Gender,
+    Match,
+    Ranking,
+    Surface,
+    Player,
+    Tournament,
+)
 
 DB_PATH = settings.db_url
 

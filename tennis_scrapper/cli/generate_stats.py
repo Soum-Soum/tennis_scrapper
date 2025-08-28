@@ -11,13 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlmodel import Session, func, select
 from tqdm.asyncio import tqdm
 
-from conf.config import settings
-from db.db_utils import engine
-from db.models import Match, Player, Surface
-from stats.compute_stats import (
+from tennis_scrapper.conf.config import settings
+from tennis_scrapper.db.db_utils import engine
+from tennis_scrapper.db.models import Match, Player, Surface
+from tennis_scrapper.stats.compute_stats import (
     compute_one_match_stat,
 )
-from stats.fetch_db import get_data_from_db
+from tennis_scrapper.stats.fetch_db import get_data_from_db
 
 
 def is_match_valid(match: Match) -> bool:

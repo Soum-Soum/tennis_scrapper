@@ -1,3 +1,5 @@
 [default]
 db_url = "postgresql+psycopg2://postgres:postgres@localhost:5432/tennis_data"
 async_db_url = "postgresql+asyncpg://postgres:postgres@localhost:5432/tennis_data"
+cols_data_path = "conf/cols_data.json"
+

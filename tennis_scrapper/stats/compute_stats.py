@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from typing import Dict, Optional
-from db.models import Match, Player
-from stats.stats_utils import (
+from tennis_scrapper.db.models import Match, Player
+from tennis_scrapper.stats.stats_utils import (
     add_key_prefix_suffix,
     compute_player_age,
     get_elo,

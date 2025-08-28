@@ -6,9 +6,14 @@ from datetime import datetime
 
 import typer
 
-from plot import plot_feature_importances, save_all_plots
-from ml.models.xgb import XgbClassifierWrapper
-from ml.preprocess_data import ColsData, preprocess_dataframe_train, save_dfs_for_cache
+from tennis_scrapper.conf.config import settings
+from tennis_scrapper.ml.models.xgb import XgbClassifierWrapper
+from tennis_scrapper.ml.preprocess_data import (
+    ColsData,
+    preprocess_dataframe_train,
+    save_dfs_for_cache,
+)
+from tennis_scrapper.ml.plot import plot_feature_importances, save_all_plots
 
 
 app = typer.Typer()
@@ -16,22 +21,22 @@ app = typer.Typer()
 
 @app.command()
 def train_model(
-    base_dir: Path = typer.Option(
-        default="output", help="Path to save the base dir"
-    ),
+    base_dir: Path = typer.Option(default="output", help="Path to save the base dir"),
     split_date: datetime = typer.Option(
         default=datetime.strptime("2025-01-01", "%Y-%m-%d"),
         help="Date to split the training and validation sets",
     ),
     use_cache: bool = typer.Option(default=False, help="Whether to use cached data"),
     add_pca: bool = typer.Option(default=False, help="Whether to add PCA features"),
-    min_history_size: int = typer.Option(default=10, help="Minimum number of matches to store in history"),
+    min_history_size: int = typer.Option(
+        default=10, help="Minimum number of matches to store in history"
+    ),
 ):
 
-    with open("resources/cols_data.json") as f:
+    with open(settings.cols_data_path) as f:
         logger.info("Loading columns data from JSON")
         cols_data = ColsData.model_validate(json.load(f))
-        
+
     data_save_path = base_dir / "data"
     if use_cache:
         X_train_scaled = pd.read_parquet(data_save_path / "X_train_scaled.parquet")
@@ -46,7 +51,9 @@ def train_model(
         logger.info(f"Loaded {len(X_df)} records from {len(chunks)} chunks")
         X_df["result"] = 0
 
-        X_train, X_val, y_train, y_val, X_train_scaled, X_val_scaled, scaler = preprocess_dataframe_train(X_df, cols_data, split_date, min_history_size)
+        X_train, X_val, y_train, y_val, X_train_scaled, X_val_scaled, scaler = (
+            preprocess_dataframe_train(X_df, cols_data, split_date, min_history_size)
+        )
 
         save_dfs_for_cache(
             X_train=X_train,
@@ -67,7 +74,6 @@ def train_model(
 
     model_wrapper.save_model(save_path=base_dir / "model" / "classifier.json")
     predictions_df = model_wrapper.predict(X_val_scaled)
-
 
     plot_save_dir = base_dir / "plots"
     plot_save_dir.mkdir(parents=True, exist_ok=True)

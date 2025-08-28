@@ -5,10 +5,10 @@ from bs4 import BeautifulSoup
 from loguru import logger
 from sqlmodel import Session, select
 from tqdm.asyncio import tqdm
-from db.models import Gender, Ranking
-from scrap.urls import get_ranking_date_url, get_ranking_url
-from db.db_utils import insert_if_not_exists
-from utils.http_utils import async_get_with_retry
+from tennis_scrapper.db.models import Gender, Ranking
+from tennis_scrapper.scrap.urls import get_ranking_date_url, get_ranking_url
+from tennis_scrapper.db.db_utils import insert_if_not_exists
+from tennis_scrapper.utils.http_utils import async_get_with_retry
 
 
 import aiohttp

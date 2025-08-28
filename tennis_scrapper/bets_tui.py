@@ -15,8 +15,8 @@ from textual import events
 from textual.containers import Horizontal
 from textual.widgets import Header, Footer, Input, Static, DataTable, Label
 
-from db.db_utils import get_player_by_id
-from db.models import Match
+from tennis_scrapper.db.db_utils import get_player_by_id
+from tennis_scrapper.db.models import Match
 
 
 app_cli = typer.Typer(add_completion=False)
@@ -339,7 +339,6 @@ def compute_bets(
             side = "P2"
         else:
             raise ValueError(f"Invalid predicted class: {pred_class}")
-
 
         valid_odd = odd and odd > 1.0
         implied = (1.0 / odd) if valid_odd else math.nan

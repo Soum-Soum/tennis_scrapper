@@ -5,8 +5,8 @@ from loguru import logger
 from sqlmodel import Session, select, func
 from tqdm import tqdm
 
-from db.db_utils import get_table
-from db.models import EloSurface, Player, Surface, Match
+from tennis_scrapper.db.db_utils import get_table
+from tennis_scrapper.db.models import EloSurface, Player, Surface, Match
 
 INITIAL_ELO = 1500.0
 K = 32

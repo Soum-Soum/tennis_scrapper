@@ -2,7 +2,7 @@ import datetime
 
 import aiohttp
 from requests import Session
-from db.models import Gender, Surface, Tournament
+from tennis_scrapper.db.models import Gender, Surface, Tournament
 
 
 from bs4 import BeautifulSoup
@@ -11,9 +11,9 @@ from loguru import logger
 
 from typing import Any, List, Coroutine
 
-from scrap.urls import get_one_year_tournaments_url
-from db.db_utils import insert_if_not_exists
-from utils.http_utils import async_get_with_retry
+from tennis_scrapper.scrap.urls import get_one_year_tournaments_url
+from tennis_scrapper.db.db_utils import insert_if_not_exists
+from tennis_scrapper.utils.http_utils import async_get_with_retry
 
 
 def parse_surface(td: Any) -> Surface:

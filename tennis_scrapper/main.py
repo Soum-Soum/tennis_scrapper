@@ -4,8 +4,8 @@ import typer
 from loguru import logger
 from tqdm import tqdm
 
-from cli.generate_stats import app as generate_stats_app
-from cli.scrap_all import app as scrap_all_app
+from tennis_scrapper.cli.generate_stats import app as generate_stats_app
+from tennis_scrapper.cli.scrap_all import app as scrap_all_app
 
 app = typer.Typer(pretty_exceptions_enable=False)
 app.add_typer(generate_stats_app)

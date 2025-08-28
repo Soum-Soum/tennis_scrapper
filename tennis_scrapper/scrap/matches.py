@@ -9,11 +9,11 @@ from typing import Any, Coroutine, List, Optional
 
 from sqlmodel import Session
 
-from db.models import Gender, Match
+from tennis_scrapper.db.models import Gender, Match
 
 
-from scrap.urls import get_match_result_list_page_url
-from utils.http_utils import async_get_with_retry
+from tennis_scrapper.scrap.urls import get_match_result_list_page_url
+from tennis_scrapper.utils.http_utils import async_get_with_retry
 
 
 def parse_score(tr1, tr2) -> str:

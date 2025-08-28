@@ -1,5 +1,5 @@
 from datetime import date
-from db.models import Match, Player
+from tennis_scrapper.db.models import Match, Player
 
 
 def is_winner(match: Match, player_id: str) -> bool:

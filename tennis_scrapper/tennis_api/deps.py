@@ -3,7 +3,7 @@ from typing import AsyncGenerator
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from conf.config import settings
+from tennis_scrapper.conf.config import settings
 
 
 _ASYNC_DB_URL = getattr(settings, "async_db_url", None) or getattr(settings, "db_url")

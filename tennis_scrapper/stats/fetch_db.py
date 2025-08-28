@@ -1,12 +1,11 @@
 from datetime import date
 
 from sqlalchemy.ext.asyncio import AsyncEngine
-from sqlmodel import or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from db.models import Match, Surface
-from stats.stats_utils import is_match_valid
-from db.db_utils import get_h2h_matches, get_player_history
+from tennis_scrapper.db.models import Match, Surface
+from tennis_scrapper.stats.stats_utils import is_match_valid
+from tennis_scrapper.db.db_utils import get_h2h_matches, get_player_history
 
 
 async def get_player_history_at_dt(

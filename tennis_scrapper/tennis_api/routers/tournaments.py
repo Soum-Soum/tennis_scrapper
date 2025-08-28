@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from db.models import Tournament, Gender
+from tennis_scrapper.db.models import Tournament, Gender
 from tennis_api.deps import get_async_session
 
 

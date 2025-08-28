@@ -11,10 +11,10 @@ from sqlmodel import Session
 from tqdm import tqdm
 import typer
 
-from conf.config import settings
-from cli.generate_stats import process_matches
+from tennis_scrapper.conf.config import settings
+from tennis_scrapper.cli.generate_stats import process_matches
 from data.add_elo import K, compute_elo
-from db.db_utils import (
+from tennis_scrapper.db.db_utils import (
     get_engine,
     get_last_ranking,
     get_one_player_matches,
@@ -22,12 +22,19 @@ from db.db_utils import (
     get_table,
     get_tournament_by_url,
 )
-from db.models import Gender, Match, ModelPredictions, Player, Ranking, Surface
-from scrap.matches import extract_matches_from_table
-from scrap.urls import get_match_list_page_url
-from ml.preprocess_data import ColsData, preprocess_dataframe_predict
-from ml.models.xgb import XgbClassifierWrapper
-from stats.stats_utils import get_elo
+from tennis_scrapper.db.models import (
+    Gender,
+    Match,
+    ModelPredictions,
+    Player,
+    Ranking,
+    Surface,
+)
+from tennis_scrapper.scrap.matches import extract_matches_from_table
+from tennis_scrapper.scrap.urls import get_match_list_page_url
+from tennis_scrapper.ml.preprocess_data import ColsData, preprocess_dataframe_predict
+from tennis_scrapper.ml.models.xgb import XgbClassifierWrapper
+from tennis_scrapper.stats.stats_utils import get_elo
 
 
 def incomming_match_from_html(html: str, date: date, gender: Gender) -> list[Match]:
@@ -214,7 +221,7 @@ def predict(base_dir: Path = typer.Option(help="Path to save the base dir")):
 
     X_test = asyncio.run(generate_stats(matches))
 
-    with open("/home/pierre/dev/tennis_scrapper/resources/cols_data.json") as f:
+    with open(settings.cols_data_path) as f:
         cols_data = ColsData.model_validate(json.load(f))
 
     scaler = joblib.load(base_dir / "data" / "scaler.pkl")
