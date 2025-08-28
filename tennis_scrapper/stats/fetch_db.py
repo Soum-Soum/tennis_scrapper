@@ -6,26 +6,22 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.models import Match, Surface
 from stats.stats_utils import is_match_valid
+from db.db_utils import get_h2h_matches, get_player_history
 
 
 async def get_player_history_at_dt(
     player_id: str,
-    date: date,
+    cutting_date: date,
     hit_limit: int,
     surface: Surface,
     db_session: AsyncSession,
 ) -> tuple[list[Match], list[Match]]:
     """Get player's match history up to a specific date."""
-    # TODO replace by get_one_player_matches when all sessions will be async
-    result = await db_session.exec(
-        select(Match)
-        .where(
-            or_(Match.player_1_id == player_id, Match.player_2_id == player_id),
-            Match.date < date,
-        )
-        .order_by(Match.date)
+    matches = await get_player_history(
+        db_session=db_session,
+        player_id=player_id,
+        cutting_date=cutting_date,
     )
-    matches = result.all()
     matches = list(filter(is_match_valid, matches))
 
     matches_on_surface = [match for match in matches if match.surface == surface]
@@ -40,25 +36,21 @@ async def get_player_history_at_dt(
     return matches, matches_on_surface
 
 
-async def get_h2h_matches(
+async def get_h2h_matches_at_dt(
     player_1_id: str,
     player_2_id: str,
-    match_date: date,
+    cutting_date: date,
     db_session: AsyncSession,
 ) -> list[Match]:
     """Get head-to-head matches between two players."""
-    matches = await db_session.exec(
-        select(Match)
-        .where(
-            or_(Match.player_1_id == player_1_id, Match.player_2_id == player_1_id),
-            or_(Match.player_1_id == player_2_id, Match.player_2_id == player_2_id),
-            Match.date < match_date,
-        )
-        .order_by(Match.date)
+    matches = await get_h2h_matches(
+        db_session=db_session,
+        player_1_id=player_1_id,
+        player_2_id=player_2_id,
+        cutting_date=cutting_date,
     )
-    matches = matches.all()
     matches = list(filter(is_match_valid, matches))
-    return sorted(matches, key=lambda x: x.date)
+    return matches
 
 
 async def get_data_from_db(
@@ -69,7 +61,7 @@ async def get_data_from_db(
     async with AsyncSession(async_engine) as db_session:
         matches_player_1, matches_player_1_on_surface = await get_player_history_at_dt(
             player_id=match.player_1_id,
-            date=match.date,
+            cutting_date=match.date,
             hit_limit=hit_limit,
             surface=match.surface,
             db_session=db_session,
@@ -77,16 +69,16 @@ async def get_data_from_db(
 
         matches_player_2, matches_player_2_on_surface = await get_player_history_at_dt(
             player_id=match.player_2_id,
-            date=match.date,
+            cutting_date=match.date,
             hit_limit=hit_limit,
             surface=match.surface,
             db_session=db_session,
         )
 
-        h2h_matches = await get_h2h_matches(
+        h2h_matches = await get_h2h_matches_at_dt(
             player_1_id=match.player_1_id,
             player_2_id=match.player_2_id,
-            match_date=match.date,
+            cutting_date=match.date,
             db_session=db_session,
         )
 

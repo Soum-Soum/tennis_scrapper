@@ -4,7 +4,11 @@ import datetime
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from db.models import Surface
-from stats.fetch_db import get_player_history_at_dt, get_h2h_matches, get_data_from_db
+from stats.fetch_db import (
+    get_player_history_at_dt,
+    get_h2h_matches_at_dt,
+    get_data_from_db,
+)
 from tests.utils.async_db import (
     create_test_async_engine,
     dispose_engine,
@@ -52,7 +56,7 @@ def test_get_player_history_at_dt_basic():
 
                 all_matches, matches_on_surface = await get_player_history_at_dt(
                     player_id=p1.player_id,
-                    date=datetime.date(2020, 4, 1),
+                    cutting_date=datetime.date(2020, 4, 1),
                     hit_limit=10,
                     surface=Surface.HARD,
                     db_session=session,
@@ -71,7 +75,7 @@ def test_get_player_history_at_dt_basic():
                 # With a hit_limit of 2, should keep last 2 chronologically
                 all_matches, matches_on_surface = await get_player_history_at_dt(
                     player_id=p1.player_id,
-                    date=datetime.date(2020, 4, 1),
+                    cutting_date=datetime.date(2020, 4, 1),
                     hit_limit=2,
                     surface=Surface.HARD,
                     db_session=session,
@@ -128,10 +132,10 @@ def test_get_h2h_matches_orders_and_filtering():
                     matches=[m_older, m_newer, m_too_late, m_other],
                 )
 
-                h2h = await get_h2h_matches(
+                h2h = await get_h2h_matches_at_dt(
                     player_1_id=p1.player_id,
                     player_2_id=p2.player_id,
-                    match_date=datetime.date(2020, 12, 31),
+                    cutting_date=datetime.date(2020, 12, 31),
                     db_session=session,
                 )
 

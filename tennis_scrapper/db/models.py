@@ -267,18 +267,30 @@ class EloRanking(HashedIDModel, table=False):
 
 
 class ModelPredictions(HashedIDModel, table=True):
+    __tablename__ = "model_predictions"
+
     prediction_id: str = Field(default=None, primary_key=True)
-    match_id: str = Field(foreign_key="match.match_id", nullable=False)
+    date: datetime.date = Field(nullable=False)
+    player_1_id: str = Field(foreign_key="player.player_id", nullable=False)
+    player_2_id: str = Field(foreign_key="player.player_id", nullable=False)
     predicted_class: str = Field(nullable=False)
     predicted_proba: float = Field(nullable=False)
     player_1_odds: float = Field(nullable=False)
     player_2_odds: float = Field(nullable=False)
-    date: datetime.date = Field(nullable=False)
+
+    match_id: str = Field(foreign_key="match.match_id", nullable=True)
+    final_result: str = Field(nullable=True)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if self.prediction_id:
             raise ValueError(f"Prediction ID is already set: {self.prediction_id}")
         self.prediction_id = self.generate_hashed_id(
-            self.match_id, self.predicted_class, self.predicted_proba, self.player_1_odds, self.player_2_odds, self.date
+            self.date,
+            self.player_1_id,
+            self.player_2_id,
+            self.predicted_class,
+            self.predicted_proba,
+            self.player_1_odds,
+            self.player_2_odds,
         )

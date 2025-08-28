@@ -5,6 +5,7 @@ from typing import Type, TypeVar, Optional
 
 from loguru import logger
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import (
     SQLModel,
     Sequence,
@@ -33,16 +34,19 @@ def get_engine():
         sys.exit(1)
 
 
+@contextmanager
+def get_session(existing_session: Optional[Session] = None):
+    if existing_session is not None:
+        yield existing_session
+    else:
+        with Session(get_engine()) as session:
+            yield session
+
+
 def create_db_and_tables():
     engine = get_engine()
     SQLModel.metadata.create_all(engine)
     return engine
-
-
-# def get_session(engine=None):
-#     if engine is None:
-#         engine = get_engine()
-#     return Session(engine)
 
 
 engine = get_engine()
@@ -194,15 +198,6 @@ def add_tournament_to_match_table(db_session: Session):
     db_session.commit()
 
 
-@contextmanager
-def get_session(existing_session: Optional[Session] = None):
-    if existing_session is not None:
-        yield existing_session
-    else:
-        with Session(get_engine()) as session:
-            yield session
-
-
 def get_player_by_id(
     player_id: str, db_session: Optional[Session] = None
 ) -> Optional[Player]:
@@ -273,3 +268,42 @@ def get_last_ranking(db_session: Session, gender: Gender) -> list[Ranking]:
         Ranking.circuit == gender.circuit, Ranking.date == last_ranking_date
     )
     return db_session.exec(statement).all()
+
+
+async def get_player_history(
+    db_session: AsyncSession,
+    player_id: str,
+    cutting_date: Optional[date] = None,
+    limit: Optional[int] = None,
+) -> list[Match]:
+    statement = select(Match).where(
+        or_(Match.player_1_id == player_id, Match.player_2_id == player_id),
+    )
+    if cutting_date:
+        statement = statement.where(Match.date < cutting_date)
+    if limit:
+        statement = statement.limit(limit)
+
+    statement = statement.order_by(Match.date)
+
+    result = await db_session.exec(statement)
+    return result.all()
+
+
+async def get_h2h_matches(
+    db_session: AsyncSession,
+    player_1_id: str,
+    player_2_id: str,
+    cutting_date: Optional[date] = None,
+) -> list[Match]:
+    statement = select(Match).where(
+        or_(Match.player_1_id == player_1_id, Match.player_2_id == player_1_id),
+        or_(Match.player_1_id == player_2_id, Match.player_2_id == player_2_id),
+    )
+    if cutting_date:
+        statement = statement.where(Match.date < cutting_date)
+
+    statement = statement.order_by(Match.date)
+
+    result = await db_session.exec(statement)
+    return result.all()

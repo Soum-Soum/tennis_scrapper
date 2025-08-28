@@ -231,34 +231,23 @@ def predict(base_dir: Path = typer.Option(help="Path to save the base dir")):
 
     X_test = pd.concat([X_test, predictions_df], axis=1)
 
-    # with Session(get_engine()) as db_session:
-    #     for match, (predicted_class, predicted_proba) in zip(
-    #         matches, predictions_df.itertuples(index=False)
-    #     ):
-    #         prediction = ModelPredictions(
-    #             match_id=match.match_id,
-    #             predicted_class=predicted_class,
-    #             predicted_proba=predicted_proba,
-    #             player_1_odds=match.player_1_odds,
-    #             player_2_odds=match.player_2_odds,
-    #             date=match.date,
-    #         )
-    #         db_session.add(prediction)
-    #     db_session.commit()
-
-    prediction_path = Path(f"predictions/{datetime.now().strftime('%Y-%m-%d')}")
-    prediction_path.mkdir(parents=True, exist_ok=True)
-    prediction_file = prediction_path / "predictions.csv"
-    matches_save_dir = prediction_path / "matches"
-    matches_save_dir.mkdir(parents=True, exist_ok=True)
-    for match in matches:
-        with open(matches_save_dir / f"{match.match_id}.json", "w") as f:
-            f.write(match.model_dump_json(indent=4))
-
-    X_test.to_csv(
-        prediction_file,
-        index=False,
-    )
+    with Session(get_engine()) as db_session:
+        predictions = []
+        for match, (predicted_class, predicted_proba) in zip(
+            matches, predictions_df.itertuples(index=False)
+        ):
+            prediction = ModelPredictions(
+                player_1_id=match.player_1_id,
+                player_2_id=match.player_2_id,
+                predicted_class=predicted_class,
+                predicted_proba=predicted_proba,
+                player_1_odds=match.player_1_odds,
+                player_2_odds=match.player_2_odds,
+                date=match.date,
+            )
+            predictions.append(prediction)
+        db_session.add_all(predictions)
+        db_session.commit()
 
 
 if __name__ == "__main__":
