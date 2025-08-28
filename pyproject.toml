@@ -33,6 +33,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "aiosqlite>=0.21.0",
     "black>=25.1.0",
     "pyinstrument>=5.1.1",
     "ruff>=0.12.9",

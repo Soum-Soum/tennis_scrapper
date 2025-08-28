@@ -4,6 +4,7 @@ import pytest
 
 from db.models import Gender
 from scrap.players import player_from_html
+from scrap.urls import get_player_detail_url
 
 
 @pytest.fixture
@@ -13,7 +14,7 @@ def url_extension() -> str:
 
 @pytest.fixture
 def url() -> str:
-    return "https://www.tennisexplorer.com/player/sinner-8b8e8/"
+    return get_player_detail_url(url_extension)
 
 
 def test_scrap_player_ok(url: str, url_extension: str):

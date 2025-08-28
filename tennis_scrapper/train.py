@@ -9,7 +9,6 @@ import typer
 from plot import plot_feature_importances, save_all_plots
 from ml.models.xgb import XgbClassifierWrapper
 from ml.preprocess_data import ColsData, preprocess_dataframe_train, save_dfs_for_cache
-from ml.models.logistic import LogisticRegressionWrapper
 
 
 app = typer.Typer()
@@ -60,7 +59,7 @@ def train_model(
             save_dir=data_save_path,
         )
 
-    xgb_kwargs = {"n_estimators": 600, "max_depth": 7, "min_child_weight": 15}
+    xgb_kwargs = {"n_estimators": 600, "max_depth": 6, "min_child_weight": 15}
     model_wrapper = XgbClassifierWrapper.from_params(xgb_kwargs, y_train)
     # model_wrapper = LogisticRegressionWrapper.from_params({})
 

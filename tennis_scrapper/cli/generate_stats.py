@@ -59,7 +59,7 @@ async def process_one_match(
         h2h_matches,
     ) = await get_data_from_db(
         match=match,
-        ks=ks,
+        hit_limit=max(ks),
         async_engine=async_engine,
     )
 

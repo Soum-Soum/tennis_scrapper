@@ -1,5 +1,4 @@
 import asyncio
-from collections import defaultdict
 from datetime import date, datetime, timedelta
 import json
 import tempfile
@@ -7,9 +6,8 @@ from urllib.request import urlopen
 from pathlib import Path
 from bs4 import BeautifulSoup
 import joblib
-from loguru import logger
 import pandas as pd
-from sqlmodel import Session, select
+from sqlmodel import Session
 from tqdm import tqdm
 import typer
 
@@ -24,7 +22,7 @@ from db.db_utils import (
     get_table,
     get_tournament_by_url,
 )
-from db.models import Gender, Match, Player, Ranking, Surface
+from db.models import Gender, Match, ModelPredictions, Player, Ranking, Surface
 from scrap.matches import extract_matches_from_table
 from scrap.urls import get_match_list_page_url
 from ml.preprocess_data import ColsData, preprocess_dataframe_predict
@@ -219,7 +217,6 @@ def predict(base_dir: Path = typer.Option(help="Path to save the base dir")):
     with open("/home/pierre/dev/tennis_scrapper/resources/cols_data.json") as f:
         cols_data = ColsData.model_validate(json.load(f))
 
-
     scaler = joblib.load(base_dir / "data" / "scaler.pkl")
 
     X_test_preprocessed = preprocess_dataframe_predict(
@@ -229,10 +226,25 @@ def predict(base_dir: Path = typer.Option(help="Path to save the base dir")):
     model_wrapper = XgbClassifierWrapper.from_model(
         base_dir / "model" / "classifier.json"
     )
-    
+
     predictions_df = model_wrapper.predict(X_test_preprocessed)
 
     X_test = pd.concat([X_test, predictions_df], axis=1)
+
+    # with Session(get_engine()) as db_session:
+    #     for match, (predicted_class, predicted_proba) in zip(
+    #         matches, predictions_df.itertuples(index=False)
+    #     ):
+    #         prediction = ModelPredictions(
+    #             match_id=match.match_id,
+    #             predicted_class=predicted_class,
+    #             predicted_proba=predicted_proba,
+    #             player_1_odds=match.player_1_odds,
+    #             player_2_odds=match.player_2_odds,
+    #             date=match.date,
+    #         )
+    #         db_session.add(prediction)
+    #     db_session.commit()
 
     prediction_path = Path(f"predictions/{datetime.now().strftime('%Y-%m-%d')}")
     prediction_path.mkdir(parents=True, exist_ok=True)

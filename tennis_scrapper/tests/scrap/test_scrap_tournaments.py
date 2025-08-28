@@ -3,11 +3,12 @@ import pytest
 
 from scrap.tournaments import tournaments_from_html
 from db.models import Gender, Surface
+from scrap.urls import get_one_year_tournaments_url
 
 
 @pytest.fixture
 def url() -> str:
-    return "https://www.tennisexplorer.com/calendar/atp-men/2024/"
+    return get_one_year_tournaments_url(gender=Gender.MEN, year=2024)
 
 
 def test_scrap_tournaments_ok(url: str):

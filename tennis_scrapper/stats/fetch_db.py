@@ -63,14 +63,14 @@ async def get_h2h_matches(
 
 async def get_data_from_db(
     match: Match,
-    ks: list[int],
+    hit_limit: int,
     async_engine: AsyncEngine,
 ) -> tuple[list[Match], list[Match], list[Match], list[Match], list[Match]]:
     async with AsyncSession(async_engine) as db_session:
         matches_player_1, matches_player_1_on_surface = await get_player_history_at_dt(
             player_id=match.player_1_id,
             date=match.date,
-            hit_limit=max(ks),
+            hit_limit=hit_limit,
             surface=match.surface,
             db_session=db_session,
         )
@@ -78,7 +78,7 @@ async def get_data_from_db(
         matches_player_2, matches_player_2_on_surface = await get_player_history_at_dt(
             player_id=match.player_2_id,
             date=match.date,
-            hit_limit=max(ks),
+            hit_limit=hit_limit,
             surface=match.surface,
             db_session=db_session,
         )

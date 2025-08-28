@@ -1,10 +1,9 @@
 from datetime import datetime, date
-from select import select
 from typing import Any, Coroutine
 
 from bs4 import BeautifulSoup
 from loguru import logger
-from sqlmodel import Session
+from sqlmodel import Session, select
 from tqdm.asyncio import tqdm
 from db.models import Gender, Ranking
 from scrap.urls import get_ranking_date_url, get_ranking_url

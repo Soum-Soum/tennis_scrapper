@@ -387,7 +387,10 @@
         "diff_match_played_last_month",
         "player_2_history_size",
         "player_1_history_size",
-        "diff_history_size"
+        "diff_history_size",
+        "player_1_history_size_on_surface",
+        "player_2_history_size_on_surface",
+        "diff_history_size_on_surface"
     ],
     "categorical": [
         "players_gender",
