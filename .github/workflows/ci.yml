@@ -28,12 +28,12 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Install dependencies (default + dev)
-        run: uv sync --group dev
+        run: cd backend && uv sync --group dev
 
       - name: Ruff - Lint
-        run: uv run ruff check --output-format=github .
+        run: cd backend && uv run ruff check --output-format=github .
 
       - name: Pytest - Run tests
-        run: uv run pytest
+        run: cd backend && uv run pytest
 
 

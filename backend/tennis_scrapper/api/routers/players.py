@@ -5,7 +5,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from tennis_scrapper.db.models import Player
-from tennis_api.deps import get_async_session
+from tennis_scrapper.api.deps import get_async_session
 
 
 router = APIRouter(prefix="/players", tags=["players"])

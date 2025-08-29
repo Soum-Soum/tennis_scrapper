@@ -6,7 +6,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from tennis_scrapper.db.models import Match
-from tennis_api.deps import get_async_session
+from tennis_scrapper.api.deps import get_async_session
 from tennis_scrapper.db.db_utils import get_h2h_matches, get_player_history
 
 
