@@ -46,3 +46,7 @@ dev = [
 extend-exclude = [
     "migrations",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
