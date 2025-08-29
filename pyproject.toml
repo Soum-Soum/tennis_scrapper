@@ -41,3 +41,8 @@ dev = [
     "ruff>=0.12.9",
     "vulture>=2.14",
 ]
+
+[tool.ruff]
+extend-exclude = [
+    "migrations",
+]
