@@ -4,6 +4,7 @@ import sys
 from typing import Type, TypeVar, Optional
 
 from loguru import logger
+from sqlalchemy import Engine
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import (
@@ -29,12 +30,9 @@ from tennis_scrapper.db.models import (
     Tournament,
 )
 
-DB_PATH = settings.db_url
-
-
-def get_engine():
+def get_engine() -> Engine:
     try:
-        return create_engine(DB_PATH, echo=False)
+        return create_engine(settings.db_url, echo=False)
     except Exception as e:
         print(f"Error connecting to database: {e}")
         print("If using PostgreSQL, make sure the database is running and accessible.")
@@ -51,32 +49,26 @@ def get_session(existing_session: Optional[Session] = None):
 
 
 def create_db_and_tables():
-    engine = get_engine()
-    SQLModel.metadata.create_all(engine)
-    return engine
-
-
-engine = get_engine()
-SQLModel.metadata.create_all(engine)
+    SQLModel.metadata.create_all(get_engine())
 
 
 T = TypeVar("T", bound=SQLModel)
 
 
 def get_table(table: Type[T]) -> Sequence[T]:
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         statement = select(table)
         result = session.exec(statement)
         return result.all()
 
 
 def clear_table(table: Type[T]) -> None:
-    with Session(engine) as db_session:
+    with Session(get_engine()) as db_session:
         db_session.exec(delete(table))
         db_session.commit()
 
 
-def get_conflict_columns(engine, table):
+def get_conflict_columns(engine: Engine, table: Type[T]):
     inspector = inspect(engine)
     table_name = table.__tablename__
 
@@ -102,7 +94,7 @@ def insert_if_not_exists(
     if len(instances) == 0:
         return
 
-    conflict_columns = get_conflict_columns(engine, table)
+    conflict_columns = get_conflict_columns(db_session.get_bind(), table)
 
     def insert_one_batch(batch: list[T]) -> None:
         values = [instance.model_dump() for instance in batch]
